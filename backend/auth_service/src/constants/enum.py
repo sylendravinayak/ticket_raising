@@ -1,12 +1,12 @@
-from sqlalchemy import Enum
-import enum
-class UserRole(str, enum.Enum):
-    USER = "user"
-    ADMIN = "admin"
-    SUPPORT_AGENT = "support_agent"
-    TEAM_LEAD = "team_lead"
-    
+from enum import StrEnum
 
-class ContactMode(str, enum.Enum):
+
+class UserRole(StrEnum):
+    USER="user"
+    ADMIN="admin"
+    SUPPORT_AGENT="support_agent"
+    TEAM_LEAD="team_lead"
+
+class ContactMode(StrEnum):
     EMAIL = "email"
     PORTAL = "portal"

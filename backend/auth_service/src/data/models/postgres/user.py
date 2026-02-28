@@ -1,29 +1,21 @@
 from __future__ import annotations
 
-import enum
-from typing import TYPE_CHECKING
+from uuid import UUID
 
 from sqlalchemy import (
-    String,
     Boolean,
+    Enum,
     ForeignKey,
     Index,
-    Enum,
+    String,
     text,
 )
-from uuid import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from src.constants.enum import ContactMode
 from src.data.models.postgres.base import Base, TimestampMixin, UUIDMixin
-
-# if TYPE_CHECKING:
-from src.data.models.postgres.token import RefreshToken
 from src.data.models.postgres.role import Role
-
-
-class ContactMode(str, enum.Enum):
-    EMAIL = "email"
-    SMS = "sms"
+from src.data.models.postgres.token import RefreshToken
 
 
 class User(Base, UUIDMixin, TimestampMixin):
@@ -61,23 +53,24 @@ class User(Base, UUIDMixin, TimestampMixin):
         ForeignKey("roles.id", ondelete="RESTRICT"),
         nullable=False,
     )
-    
+
     lead_id: Mapped[str] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
     preferred_mode_of_contact: Mapped[ContactMode] = mapped_column(
-        Enum(ContactMode, name="contact_mode_enum"),
+        Enum(ContactMode, name="contact_mode_enum",
+        values_callable=lambda e: [m.value for m in e]),
         nullable=False,
-        server_default="email",
+        server_default=ContactMode.EMAIL.value,
     )
 
-    refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
+    refresh_tokens: Mapped[list[RefreshToken]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
     )
 
-    role: Mapped["Role"] = relationship(
+    role: Mapped[Role] = relationship(
         back_populates="users",
         lazy="joined",
     )

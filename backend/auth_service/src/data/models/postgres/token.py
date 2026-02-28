@@ -1,10 +1,12 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import String, Boolean, DateTime, ForeignKey, Index
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-from src.data.models.postgres.base import Base, TimestampMixin
 from typing import TYPE_CHECKING
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from src.data.models.postgres.base import Base, TimestampMixin
 
 if TYPE_CHECKING:
     from src.data.models.postgres.user import User

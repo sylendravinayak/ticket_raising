@@ -16,6 +16,8 @@ dependencies = [
     "slowapi>=0.1.9",             # rate limiting
     "structlog>=24.2.0",          # structured logging
     "python-multipart>=0.0.9",    # form data support
+    "argon2-cffi>=25.1.0",
+    "ruff>=0.15.4",
 ]
 
 [project.optional-dependencies]
@@ -32,6 +34,7 @@ dev = [
 line-length = 88
 select = ["E", "F", "I", "N", "UP", "RUF"]
 target-version = "py311"
+
 
 [tool.mypy]
 strict = true

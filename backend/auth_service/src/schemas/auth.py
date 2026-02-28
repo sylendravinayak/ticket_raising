@@ -1,6 +1,9 @@
 import uuid
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from datetime import datetime
+
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+
+from src.constants.enum import UserRole
 
 
 class SignupRequest(BaseModel):
@@ -8,12 +11,14 @@ class SignupRequest(BaseModel):
 
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
+    role: UserRole = Field(default=UserRole.USER, description="User role")
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "email": "user@example.com",
-                "password": "SecurePass123!"
+                "password": "SecurePass123!",
+                "role": "user"
             }
         }
     )
@@ -84,9 +89,18 @@ class UserResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+    @field_validator("role", mode="before")
+    @classmethod
+    def extract_role_name(cls, v):
+        """Handle Role ORM object → plain string."""
+        if hasattr(v, "name"):
+            name = v.name
+            return name.value if hasattr(name, "value") else str(name)
+        return str(v)
+
 
 class SignupResponse(BaseModel):
     """Response after successful registration."""
 
     user: UserResponse
-    message: str = "Account created. Please verify your email."
+    message: str = "Account created successfully"

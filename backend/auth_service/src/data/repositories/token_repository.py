@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -9,9 +9,7 @@ from src.data.repositories.base import BaseRepository
 
 
 class TokenRepository(BaseRepository[RefreshToken]):
-    """
-    Data access layer for RefreshToken.
-    """
+
 
     def __init__(self, session: AsyncSession) -> None:
         super().__init__(RefreshToken, session)
@@ -50,7 +48,7 @@ class TokenRepository(BaseRepository[RefreshToken]):
         """
         Count how many active (non-revoked, non-expired) sessions a user has.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         result = await self.session.execute(
             select(RefreshToken).where(
                 RefreshToken.user_id == user_id,
@@ -64,7 +62,7 @@ class TokenRepository(BaseRepository[RefreshToken]):
         """
         Revoke expired tokens for a user during login.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         await self.session.execute(
             update(RefreshToken)
             .where(

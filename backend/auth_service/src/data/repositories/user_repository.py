@@ -1,5 +1,6 @@
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.data.models.postgres.user import User
 from src.data.repositories.base import BaseRepository
 

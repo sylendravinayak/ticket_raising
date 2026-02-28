@@ -1,21 +1,16 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-import structlog
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from src.config.settings import get_settings
-from src.utils.security import (
-    create_access_token,
-    create_refresh_token,
-    decode_token,
-    hash_password,
-    verify_password,
-)
 from src.core.exceptions.auth import (
-    AuthenticationException,
-    InvalidTokenTypeException,
-    TokenRevokedException,
+    AuthenticationError,
+    InvalidTokenTypeError,
+    TokenRevokedError,
 )
-
+from src.data.models.postgres.role import Role
 from src.data.models.postgres.token import RefreshToken
 from src.data.models.postgres.user import User
 from src.data.repositories.token_repository import TokenRepository
@@ -26,9 +21,16 @@ from src.schemas.auth import (
     TokenResponse,
     UserResponse,
 )
-from sqlalchemy.ext.asyncio import AsyncSession
+from src.utils.security import (
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    hash_password,
+    verify_password,
+)
+from src.observability.logging.logger import get_logger
+logger = get_logger(__name__)
 
-logger = structlog.get_logger(__name__)
 settings = get_settings()
 
 
@@ -52,24 +54,28 @@ class AuthService:
         Register a new user account.
         """
         if await self._user_repo.email_exists(data.email):
-            raise AuthenticationException("Unable to create account")
+            logger.warning("Signup attempt with existing email: %s", data.email)
+            raise AuthenticationError("Unable to create account")
+
+        result = await self._user_repo.session.execute(
+            select(Role).where(Role.name == data.role)
+        )
+        role_record = result.scalar_one_or_none()
+        if role_record is None:
+            role_record = Role(name=data.role)
+            self._user_repo.session.add(role_record)
+            await self._user_repo.session.flush()
 
         user = User(
             email=data.email.lower().strip(),
             hashed_password=hash_password(data.password),
-            role=data.role,
+            role_id=role_record.id,
         )
         saved = await self._user_repo.save(user)
-
-        await logger.ainfo(
-            "auth.signup",
-            user_id=str(saved.id),
-            role=saved.role,
-        )
-
+        logger.info("signup successfull", email=data.email, user_id=str(saved.id))
         return UserResponse.model_validate(saved)
 
-   
+
 
     async def login(self, data: LoginRequest) -> TokenResponse:
         """
@@ -77,25 +83,21 @@ class AuthService:
         """
         user = await self._user_repo.get_by_email(data.email.lower().strip())
 
-      
+
         password_valid = verify_password(
             data.password,
             user.hashed_password if user else _DUMMY_HASH,
         )
 
         if not user or not password_valid or not user.is_active:
-            raise AuthenticationException()
+            logger.warning("Failed login attempt", email=data.email)
+            raise AuthenticationError()
 
         await self._token_repo.cleanup_expired(user.id)
 
         tokens = await self._issue_token_pair(user, data.device_id)
 
-        await logger.ainfo(
-            "auth.login",
-            user_id=str(user.id),
-            device_id=data.device_id,
-        )
-
+        logger.info("Login successful", email=data.email, user_id=str(user.id))
         return tokens
 
 
@@ -103,59 +105,51 @@ class AuthService:
         """
         Rotate refresh token and issue new token pair.
         """
-        
+
         try:
             payload = decode_token(refresh_token)
-        except Exception:
-            raise AuthenticationException("Invalid token")
+        except Exception as err:
+            logger.warning("Failed to decode refresh token", error=str(err))
+            raise AuthenticationError("Invalid token") from err
 
         if payload.get("token_type") != "refresh":
-            raise InvalidTokenTypeException()
+            logger.warning("Invalid token type for refresh", token_type=payload.get("token_type")) 
+            raise InvalidTokenTypeError()
+
 
         jti: str = payload.get("jti", "")
-        user_id_str: str = payload.get("sub", "")
 
         record = await self._token_repo.get_by_jti(jti)
 
         if record is None:
-            raise AuthenticationException("Invalid token")
+            logger.warning("Refresh token not found in database", jti=jti)
+            raise AuthenticationError("Invalid token")
 
         if record.revoked:
-            await logger.awarning(
-                "auth.token_reuse_detected",
-                user_id=str(record.user_id),
-                jti=jti,
-                device_id=device_id,
-            )
+
             await self._token_repo.revoke_all_for_user(record.user_id)
-            raise TokenRevokedException()
+            logger.warning("Refresh token reuse detected - all tokens revoked for user", user_id=str(record.user_id), jti=jti)
+            raise TokenRevokedError()
 
-        
+
         if record.device_id != device_id:
-            await logger.awarning(
-                "auth.device_mismatch",
-                user_id=str(record.user_id),
-                expected_device=record.device_id,
-                presented_device=device_id,
-            )
-            raise AuthenticationException("Device mismatch")
+            logger.warning("Device ID mismatch on refresh token", expected_device_id=record.device_id, provided_device_id=device_id, jti=jti)
+            raise AuthenticationError("Device mismatch")
 
-        if record.expires_at <= datetime.now(timezone.utc):
-            raise AuthenticationException("Token expired")
+        if record.expires_at <= datetime.now(UTC):
+            logger.warning("Refresh token expired", jti=jti, expires_at=record.expires_at.isoformat())
+            raise AuthenticationError("Token expired")
 
         await self._token_repo.revoke(record)
 
         user = await self._user_repo.get_by_id(record.user_id)
         if not user or not user.is_active:
-            raise AuthenticationException()
+            logger.warning("User not found or inactive during token refresh", user_id=str(record.user_id))
+            raise AuthenticationError()
 
         tokens = await self._issue_token_pair(user, device_id)
 
-        await logger.ainfo(
-            "auth.token_rotated",
-            user_id=str(user.id),
-            device_id=device_id,
-        )
+
 
         return tokens
 
@@ -170,14 +164,9 @@ class AuthService:
             record = await self._token_repo.get_by_jti(jti)
             if record and not record.revoked:
                 await self._token_repo.revoke(record)
-                await logger.ainfo(
-                    "auth.logout",
-                    user_id=str(record.user_id),
-                )
-        except Exception:
-            
-            pass
 
+        except Exception as err:
+            logger.warning("Failed to logout", error=str(err))  
 
     async def get_user_profile(self, user_id: str) -> UserResponse:
         """
@@ -186,7 +175,9 @@ class AuthService:
         """
         user = await self._user_repo.get_by_id(uuid.UUID(user_id))
         if not user or not user.is_active:
-            raise AuthenticationException()
+            logger.warning("User not found or inactive", user_id=user_id)
+            raise AuthenticationError()
+        logger.info("Fetched user profile", user_id=user_id)
         return UserResponse.model_validate(user)
 
 
@@ -199,7 +190,7 @@ class AuthService:
         """
         refresh_jti = str(uuid.uuid4())
         access_jti = str(uuid.uuid4())
-        expires_at = datetime.now(timezone.utc) + timedelta(
+        expires_at = datetime.now(UTC) + timedelta(
             days=settings.refresh_token_expire_days
         )
 
@@ -212,7 +203,8 @@ class AuthService:
         )
         await self._token_repo.save(refresh_record)
 
-        access_token = create_access_token(str(user.id), user.role, access_jti)
+        role_name = user.role.name.value if user.role else "user"
+        access_token = create_access_token(str(user.id), role_name, access_jti)
         refresh_token = create_refresh_token(str(user.id), refresh_jti)
 
         return TokenResponse(

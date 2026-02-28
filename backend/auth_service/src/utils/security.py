@@ -1,22 +1,23 @@
-from datetime import datetime, timedelta, timezone
-from typing import Any
 import uuid
-from jose import jwt, JWTError
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+from jose import jwt
 from passlib.context import CryptContext
+
 from src.config.settings import get_settings
 
 settings = get_settings()
 
 
 pwd_context = CryptContext(
-    schemes=["bcrypt"],
-    deprecated="auto",
-    bcrypt__rounds=settings.bcrypt_rounds,
+    schemes=["argon2"],
+    deprecated="auto"
 )
 
 
 def hash_password(password: str) -> str:
-    """Hash a plaintext password using bcrypt."""
+    """Hash a plaintext password using argon2."""
     return pwd_context.hash(password)
 
 
@@ -35,7 +36,7 @@ def create_access_token(
     """
     Create a short-lived JWT access token.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expire = now + timedelta(minutes=settings.access_token_expire_minutes)
 
     payload: dict[str, Any] = {
@@ -54,7 +55,7 @@ def create_refresh_token(subject: str, jti: str) -> str:
     """
     Create a long-lived JWT refresh token.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expire = now + timedelta(days=settings.refresh_token_expire_days)
 
     payload: dict[str, Any] = {

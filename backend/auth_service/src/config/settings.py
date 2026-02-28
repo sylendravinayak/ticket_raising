@@ -1,6 +1,7 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import field_validator, PostgresDsn
 from functools import lru_cache
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -10,18 +11,16 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="allow",
-        
+
     )
 
     database_url: str
-
+    log_level: str = "INFO"
     secret_key: str
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
 
-    
-    bcrypt_rounds: int = 12
     environment: str = "development"
 
     login_rate_limit: str = "5/minute"

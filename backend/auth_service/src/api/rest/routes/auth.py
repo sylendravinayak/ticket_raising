@@ -1,14 +1,13 @@
 
 
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api.rest.dependencies.auth import get_current_active_user
+from src.core.services.auth_service import AuthService
 from src.data.clients.postgres_client import get_db
-from src.api.rest.dependencies.auth import get_current_active_user, get_token_payload
 from src.data.models.postgres.user import User
 from src.schemas.auth import (
     LoginRequest,
@@ -19,11 +18,10 @@ from src.schemas.auth import (
     TokenResponse,
     UserResponse,
 )
-from src.core.services.auth_service import AuthService
+from src.observability.logging.logger import get_logger
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
-limiter = Limiter(key_func=get_remote_address)
-
 
 def _get_service(
     session: Annotated[AsyncSession, Depends(get_db)],
@@ -40,7 +38,7 @@ def _get_service(
     summary="Register a new user",
     description=(
         "Create a new user account. "
-       
+
     ),
 )
 async def signup(
@@ -48,6 +46,7 @@ async def signup(
     service: Annotated[AuthService, Depends(_get_service)],
 ) -> SignupResponse:
     user = await service.signup(data)
+   
     return SignupResponse(user=user)
 
 
@@ -57,9 +56,8 @@ async def signup(
     "/login",
     response_model=TokenResponse
 )
-@limiter.limit("5/minute")
 async def login(
-    request: Request,  
+    request: Request,
     data: LoginRequest,
     service: Annotated[AuthService, Depends(_get_service)],
 ) -> TokenResponse:
@@ -86,13 +84,11 @@ async def refresh(
     summary="Logout and revoke refresh token",
     description=(
         "Revokes the provided refresh token. "
-        
     ),
 )
 async def logout(
     data: LogoutRequest,
     service: Annotated[AuthService, Depends(_get_service)],
-    
     _current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> str:
     await service.logout(data.refresh_token)
@@ -104,7 +100,6 @@ async def logout(
     summary="Get current user profile",
     description=(
         "Returns the profile of the currently authenticated user. "
-        "Requires a valid Bearer access token."
     ),
 )
 async def me(
