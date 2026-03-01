@@ -16,10 +16,12 @@ from src.constants.enum import ContactMode
 from src.data.models.postgres.base import Base, TimestampMixin, UUIDMixin
 from src.data.models.postgres.role import Role
 from src.data.models.postgres.token import RefreshToken
+from typing import ClassVar
 
 
 class User(Base, UUIDMixin, TimestampMixin):
     __tablename__ = "users"
+    
 
     email: Mapped[str] = mapped_column(
         String(255),

@@ -4,11 +4,15 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from fastapi import APIRouter, Depends, Request, Response
+from src.utils.security import set_auth_cookies, clear_auth_cookies
+from src.schemas.auth import AccessTokenResponse
 from src.api.rest.dependencies.auth import get_current_active_user
 from src.core.services.auth_service import AuthService
 from src.data.clients.postgres_client import get_db
 from src.data.models.postgres.user import User
+from src.observability.logging.logger import get_logger
+from fastapi import HTTPException
 from src.schemas.auth import (
     LoginRequest,
     LogoutRequest,
@@ -18,7 +22,7 @@ from src.schemas.auth import (
     TokenResponse,
     UserResponse,
 )
-from src.observability.logging.logger import get_logger
+
 logger = get_logger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -46,52 +50,45 @@ async def signup(
     service: Annotated[AuthService, Depends(_get_service)],
 ) -> SignupResponse:
     user = await service.signup(data)
-   
+
     return SignupResponse(user=user)
 
-
-
-
-@router.post(
-    "/login",
-    response_model=TokenResponse
-)
+@router.post("/login", response_model=AccessTokenResponse)
 async def login(
-    request: Request,
     data: LoginRequest,
+    response: Response,
     service: Annotated[AuthService, Depends(_get_service)],
-) -> TokenResponse:
-    return await service.login(data)
+) -> AccessTokenResponse:
+    tokens = await service.login(data)
+    set_auth_cookies(response, tokens.refresh_token)
+    return AccessTokenResponse(access_token=tokens.access_token, expires_in=tokens.expires_in)
 
-
-@router.post(
-    "/refresh",
-    response_model=TokenResponse,
-    summary="Rotate refresh token",
-    description=(
-        "Exchange a valid refresh token for a new token pair. "
-    ),
-)
+@router.post("/refresh", response_model=AccessTokenResponse)
 async def refresh(
-    data: RefreshRequest,
+    request: Request,
+    response: Response,
     service: Annotated[AuthService, Depends(_get_service)],
-) -> TokenResponse:
-    return await service.refresh(data.refresh_token, data.device_id)
+) -> AccessTokenResponse:
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="No refresh token provided")
+    tokens = await service.refresh(refresh_token)
+    set_auth_cookies(response, tokens.refresh_token)
+    return AccessTokenResponse(access_token=tokens.access_token, expires_in=tokens.expires_in)
 
 
-@router.post(
-    "/logout",
-    summary="Logout and revoke refresh token",
-    description=(
-        "Revokes the provided refresh token. "
-    ),
-)
+@router.post("/logout")
 async def logout(
-    data: LogoutRequest,
+    request: Request,
+    response: Response,
     service: Annotated[AuthService, Depends(_get_service)],
     _current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> str:
-    await service.logout(data.refresh_token)
+    refresh_token = request.cookies.get("refresh_token")
+    if not refresh_token:
+        raise HTTPException(status_code=401, detail="No refresh token provided")
+    await service.logout(refresh_token)
+    clear_auth_cookies(response)
     return "logout successful"
 
 @router.get(

@@ -1,10 +1,9 @@
-import structlog
+from src.observability.logging.logger import get_logger
 from fastapi import APIRouter
 
 router = APIRouter(prefix="/health", tags=["Health"])
-logger = structlog.get_logger(__name__)
-
+logger=get_logger(__name__)
 @router.get("/")
-async def health_check():
+async def health_check()-> dict:
     logger.info("health_check_called")
     return {"status": "ok"}

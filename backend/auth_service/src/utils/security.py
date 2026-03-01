@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
-
+from fastapi import Response
 from jose import jwt
 from passlib.context import CryptContext
 
@@ -75,4 +75,21 @@ def decode_token(token: str) -> dict[str, Any]:
     """
     return dict(
         jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
+    )
+
+def set_auth_cookies(response: Response, refresh_token: str) -> None:
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=settings.cookie_secure,       
+        samesite=settings.cookie_samesite,   
+        max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
+        path="/api/v1/auth",                 
+    )
+
+def clear_auth_cookies(response: Response) -> None:
+    response.delete_cookie(
+        key="refresh_token",
+        path="/api/v1/auth"
     )

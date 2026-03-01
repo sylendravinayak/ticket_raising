@@ -1,8 +1,9 @@
-from typing import Generic, TypeVar, Type, Optional, Dict, Any, List, Tuple
-from sqlalchemy.orm import Session
-from sqlalchemy import select, asc, desc
-from sqlalchemy.sql import Select
+from typing import Any, Generic, TypeVar
+
 from pydantic import BaseModel
+from sqlalchemy import asc, desc, select
+from sqlalchemy.orm import Session
+from sqlalchemy.sql import Select
 
 ModelType = TypeVar("ModelType")
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
@@ -10,11 +11,11 @@ UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
 
 
 class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
-    def __init__(self, model: Type[ModelType]):
+    def __init__(self, model: type[ModelType])-> None:
         self.model = model
 
 
-    def get(self, db: Session, obj_id: Any) -> Optional[ModelType]:
+    def get(self, db: Session, obj_id: Any) -> ModelType | None:
         stmt = select(self.model).where(self.model.id == obj_id)
         return db.scalar(stmt)
 
@@ -56,14 +57,14 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     def list(
         self,
         db: Session,
-        filters: Optional[Dict[str, Any]] = None,
-        sort_by: Optional[str] = None,
+        filters: dict[str, Any] | None = None,
+        sort_by: str | None = None,
         sort_order: str = "asc",
         page: int = 1,
         page_size: int = 20,
-        allowed_filter_fields: Optional[List[str]] = None,
-        allowed_sort_fields: Optional[List[str]] = None,
-    ) -> Tuple[List[ModelType], int]:
+        allowed_filter_fields: list[str] | None = None,
+        allowed_sort_fields: list[str] | None = None,
+    ) -> tuple[list[ModelType], int]:
 
         stmt: Select = select(self.model)
 

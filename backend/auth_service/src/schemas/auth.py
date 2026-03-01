@@ -29,18 +29,12 @@ class LoginRequest(BaseModel):
 
     email: EmailStr
     password: str
-    device_id: str = Field(
-        min_length=1,
-        max_length=255,
-        description="Unique device identifier for session tracking",
-    )
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
                 "email": "user@example.com",
-                "password": "SecurePass123!",
-                "device_id": "chrome-macbook-abc123",
+                "password": "SecurePass123!"
             }
         }
     )
@@ -50,13 +44,12 @@ class RefreshRequest(BaseModel):
     """Request body for token refresh."""
 
     refresh_token: str
-    device_id: str
+
 
     model_config = ConfigDict(
         json_schema_extra={
             "example": {
-                "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-                "device_id": "chrome-macbook-abc123",
+                "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
             }
         }
     )
@@ -104,3 +97,8 @@ class SignupResponse(BaseModel):
 
     user: UserResponse
     message: str = "Account created successfully"
+
+class AccessTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int

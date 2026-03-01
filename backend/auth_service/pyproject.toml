@@ -17,7 +17,7 @@ dependencies = [
     "structlog>=24.2.0",          # structured logging
     "python-multipart>=0.0.9",    # form data support
     "argon2-cffi>=25.1.0",
-    "ruff>=0.15.4",
+    "ruff>=0.15.4"
 ]
 
 [project.optional-dependencies]

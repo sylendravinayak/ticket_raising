@@ -1,20 +1,21 @@
 import uuid
 from datetime import UTC, datetime, timedelta
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from passlib.context import CryptContext
 from src.config.settings import get_settings
 from src.core.exceptions.auth import (
     AuthenticationError,
     InvalidTokenTypeError,
     TokenRevokedError,
+    TokenExpiredError
 )
 from src.data.models.postgres.role import Role
 from src.data.models.postgres.token import RefreshToken
 from src.data.models.postgres.user import User
 from src.data.repositories.token_repository import TokenRepository
 from src.data.repositories.user_repository import UserRepository
+from src.observability.logging.logger import get_logger
 from src.schemas.auth import (
     LoginRequest,
     SignupRequest,
@@ -28,16 +29,14 @@ from src.utils.security import (
     hash_password,
     verify_password,
 )
-from src.observability.logging.logger import get_logger
+from jose import JWTError, ExpiredSignatureError
 logger = get_logger(__name__)
 
 settings = get_settings()
 
 
-_DUMMY_HASH: str = (
-    "$2b$12$notarealhashbutlongenoughtomakebcryptrunfullrounds0000"
-)
-
+pwd = CryptContext(schemes=["argon2"])
+_DUMMY_HASH=pwd.hash("dummy_password")
 
 class AuthService:
     """
@@ -95,13 +94,13 @@ class AuthService:
 
         await self._token_repo.cleanup_expired(user.id)
 
-        tokens = await self._issue_token_pair(user, data.device_id)
+        tokens = await self._issue_token_pair(user)
 
         logger.info("Login successful", email=data.email, user_id=str(user.id))
         return tokens
 
 
-    async def refresh(self, refresh_token: str, device_id: str) -> TokenResponse:
+    async def refresh(self, refresh_token: str) -> TokenResponse:
         """
         Rotate refresh token and issue new token pair.
         """
@@ -113,7 +112,10 @@ class AuthService:
             raise AuthenticationError("Invalid token") from err
 
         if payload.get("token_type") != "refresh":
-            logger.warning("Invalid token type for refresh", token_type=payload.get("token_type")) 
+            logger.warning(
+                "Invalid token type for refresh",
+                 token_type=payload.get("token_type")
+                 )
             raise InvalidTokenTypeError()
 
 
@@ -128,26 +130,31 @@ class AuthService:
         if record.revoked:
 
             await self._token_repo.revoke_all_for_user(record.user_id)
-            logger.warning("Refresh token reuse detected - all tokens revoked for user", user_id=str(record.user_id), jti=jti)
+            logger.warning(
+                "Refresh token reuse detected - all tokens revoked for user",
+                  user_id=str(record.user_id), jti=jti
+                  )
             raise TokenRevokedError()
 
-
-        if record.device_id != device_id:
-            logger.warning("Device ID mismatch on refresh token", expected_device_id=record.device_id, provided_device_id=device_id, jti=jti)
-            raise AuthenticationError("Device mismatch")
-
         if record.expires_at <= datetime.now(UTC):
-            logger.warning("Refresh token expired", jti=jti, expires_at=record.expires_at.isoformat())
+            logger.warning(
+                "Refresh token expired",
+                jti=jti,
+                expires_at=record.expires_at.isoformat()
+                )
             raise AuthenticationError("Token expired")
 
         await self._token_repo.revoke(record)
 
         user = await self._user_repo.get_by_id(record.user_id)
         if not user or not user.is_active:
-            logger.warning("User not found or inactive during token refresh", user_id=str(record.user_id))
+            logger.warning(
+            "User not found or inactive during token refresh",
+            user_id=str(record.user_id)
+            )
             raise AuthenticationError()
 
-        tokens = await self._issue_token_pair(user, device_id)
+        tokens = await self._issue_token_pair(user)
 
 
 
@@ -155,18 +162,31 @@ class AuthService:
 
 
     async def logout(self, refresh_token: str) -> None:
-        """
-        Logout by revoking the refresh token.
-        """
         try:
             payload = decode_token(refresh_token)
-            jti = payload.get("jti", "")
-            record = await self._token_repo.get_by_jti(jti)
-            if record and not record.revoked:
-                await self._token_repo.revoke(record)
 
-        except Exception as err:
-            logger.warning("Failed to logout", error=str(err))  
+        except ExpiredSignatureError as err:
+            raise TokenExpiredError() from err
+
+        except JWTError as err:
+            raise AuthenticationError("Invalid token") from err
+
+        if payload.get("token_type") != "refresh":
+            raise InvalidTokenTypeError()
+
+        jti = payload.get("jti")
+        if not jti:
+            raise AuthenticationError("Invalid token payload")
+
+        record = await self._token_repo.get_by_jti(jti)
+
+        if not record:
+            raise AuthenticationError("Invalid token")
+
+        if record.revoked:
+            raise TokenRevokedError()
+
+        await self._token_repo.revoke(record)
 
     async def get_user_profile(self, user_id: str) -> UserResponse:
         """
@@ -182,7 +202,7 @@ class AuthService:
 
 
     async def _issue_token_pair(
-        self, user: User, device_id: str
+        self, user: User
     ) -> TokenResponse:
         """
         Create DB refresh token record + sign both JWTs.
@@ -198,7 +218,6 @@ class AuthService:
         refresh_record = RefreshToken(
             user_id=user.id,
             jti=refresh_jti,
-            device_id=device_id,
             expires_at=expires_at,
         )
         await self._token_repo.save(refresh_record)

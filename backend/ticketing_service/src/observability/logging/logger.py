@@ -25,4 +25,4 @@ def setup_logging() -> None:
 
 def get_logger(name: str) -> structlog.stdlib.BoundLogger:
     return cast(structlog.stdlib.BoundLogger,
-                 structlog.get_logger(name).bind(service="auth_service"))
+                 structlog.get_logger(name).bind(service="ticketing_service"))

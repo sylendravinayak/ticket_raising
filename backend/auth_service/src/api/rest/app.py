@@ -10,6 +10,7 @@ from src.config.settings import get_settings
 from src.data.clients.postgres_client import engine
 from src.data.models.postgres.base import Base
 from src.observability.logging.logger import setup_logging
+from sqlalchemy import text
 
 settings = get_settings()
 
@@ -17,6 +18,7 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     async with engine.begin() as conn:
+        await conn.execute(text("CREATE SCHEMA IF NOT EXISTS auth"))
         await conn.run_sync(Base.metadata.create_all)
     yield
     await engine.dispose()
@@ -33,7 +35,7 @@ def create_app() -> FastAPI:
         ),
         lifespan=lifespan
     )
-    
+
     register_exception_handlers(app)
     app.include_router(auth_router, prefix="/api/v1")
 
