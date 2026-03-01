@@ -10,7 +10,8 @@ from src.data.clients.postgres_client import engine
 from src.observability.logging.logger import setup_logging
 from src.api.middleware.cors import setup_cors
 from src.api.middleware.error_handler import register_exception_handlers
-
+from src.api.rest.routes.tickets import router as tickets_router
+import src.data.models.postgres
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -30,4 +31,5 @@ def create_app() -> FastAPI:
     setup_cors(app)
 
     app.include_router(health_router)
+    app.include_router(tickets_router, prefix="/api/v1")
     return app

@@ -1,69 +1,101 @@
-import uuid
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
+
 from sqlalchemy import (
-    String, Text, Boolean, DateTime, ForeignKey,
-    Enum as SAEnum, JSON
+    BigInteger, Boolean, DateTime, Enum as SAEnum,
+    ForeignKey, Integer, String, Text, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
-from src.data.models.postgres import Base
-from src.constants.enum import TicketStatus, Priority, Severity, Channel
+
+from src.constants.enum import (
+    Environment, Priority, Severity, TicketSource, TicketStatus,
+)
+from src.data.models.postgres.base import Base
+
+if TYPE_CHECKING:
+    from src.data.models.postgres.sla import SLA
+    from src.data.models.postgres.ticket_attachment import TicketAttachment
+    from src.data.models.postgres.ticket_comment import TicketComment
+    from src.data.models.postgres.ticket_event import TicketEvent
+    from src.data.models.postgres.email_thread import EmailThread
+    from src.data.models.postgres.escalation import EscalationHistory
+    from src.data.models.postgres.notification_log import NotificationLog
 
 
 class Ticket(Base):
+
     __tablename__ = "tickets"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    ticket_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ticket_number: Mapped[str] = mapped_column(String(20), nullable=False, unique=True, index=True)
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    product: Mapped[Optional[str]] = mapped_column(String(200))
-    area_of_concern: Mapped[Optional[str]] = mapped_column(String(200))
-
-    status: Mapped[TicketStatus] = mapped_column(
-        SAEnum(TicketStatus), default=TicketStatus.NEW, nullable=False
+    product: Mapped[str] = mapped_column(String(100), nullable=False)
+    environment: Mapped[Environment] = mapped_column(
+        SAEnum(Environment, name="environment_enum", create_type=True), nullable=False
     )
-    priority: Mapped[Priority] = mapped_column(
-        SAEnum(Priority), default=Priority.MEDIUM, nullable=False
+    area_of_concern: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True
+    )
+    source: Mapped[TicketSource] = mapped_column(
+        SAEnum(TicketSource, name="ticket_source_enum", create_type=True),
+        nullable=False,
+        default=TicketSource.UI,
     )
     severity: Mapped[Severity] = mapped_column(
-        SAEnum(Severity), default=Severity.S3, nullable=False
+        SAEnum(Severity, name="severity_enum", create_type=True), nullable=False
     )
-    channel: Mapped[Channel] = mapped_column(SAEnum(Channel), nullable=False)
+    priority: Mapped[Priority] = mapped_column(
+        SAEnum(Priority, name="priority_enum", create_type=True), nullable=False
+    )
+    status: Mapped[TicketStatus] = mapped_column(
+        SAEnum(TicketStatus, name="ticket_status_enum", create_type=True),
+        nullable=False,
+        default=TicketStatus.NEW,
+    )
 
-    # Actors
-    customer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    assigned_agent_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
+    customer_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    assignee_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
+  
+    sla_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("slas.sla_id", ondelete="SET NULL"), nullable=True
+    )
 
-    # SLA
-    sla_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
-    response_due_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    resolution_due_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    sla_breached: Mapped[bool] = mapped_column(Boolean, default=False)
-    is_escalated: Mapped[bool] = mapped_column(Boolean, default=False)
+    customer_tier_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("customer_tiers.tier_id", ondelete="SET NULL"), nullable=True
+    )
 
-    email_thread_id: Mapped[Optional[str]] = mapped_column(String(500))
-    email_message_id: Mapped[Optional[str]] = mapped_column(String(500))
-
-    priority_override_justification: Mapped[Optional[str]] = mapped_column(Text)
-    priority_overridden_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
-
-    attachments: Mapped[Optional[list]] = mapped_column(JSON, default=list)
-
+    response_due_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolution_due_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    is_breached: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_escalated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    hold_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    total_hold_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow, nullable=False
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow,
-        onupdate=datetime.utcnow, nullable=False
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
-    
-    events: Mapped[list["TicketEvent"]] = relationship(
-        "TicketEvent", back_populates="ticket", cascade="all, delete-orphan"
+    sla: Mapped[Optional["SLA"]] = relationship("SLA", back_populates="tickets")
+    attachments: Mapped[list["TicketAttachment"]] = relationship(
+        "TicketAttachment", back_populates="ticket", cascade="all, delete-orphan"
     )
     comments: Mapped[list["TicketComment"]] = relationship(
         "TicketComment", back_populates="ticket", cascade="all, delete-orphan"
+    )
+    events: Mapped[list["TicketEvent"]] = relationship(
+        "TicketEvent", back_populates="ticket", cascade="all, delete-orphan"
+    )
+    email_threads: Mapped[list["EmailThread"]] = relationship(
+        "EmailThread", back_populates="ticket", cascade="all, delete-orphan"
+    )
+    escalation_history: Mapped[list["EscalationHistory"]] = relationship(
+        "EscalationHistory", back_populates="ticket", cascade="all, delete-orphan"
+    )
+    notification_logs: Mapped[list["NotificationLog"]] = relationship(
+        "NotificationLog", back_populates="ticket", cascade="all, delete-orphan"
     )

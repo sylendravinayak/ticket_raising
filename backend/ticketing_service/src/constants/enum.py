@@ -1,6 +1,13 @@
 import enum
 
 
+class UserRole(str, enum.Enum):
+    CUSTOMER = "CUSTOMER"
+    AGENT = "AGENT"
+    LEAD = "LEAD"
+    ADMIN = "ADMIN"
+
+
 class TicketStatus(str, enum.Enum):
     NEW = "NEW"
     ACKNOWLEDGED = "ACKNOWLEDGED"
@@ -8,37 +15,40 @@ class TicketStatus(str, enum.Enum):
     ON_HOLD = "ON_HOLD"
     RESOLVED = "RESOLVED"
     CLOSED = "CLOSED"
+    REOPENED = "REOPENED"
 
 
-class Priority(str, enum.Enum):
-    P0 = "P0"   
-    P1 = "P1"   # High — major feature broken
-    P2 = "P2"   # Medium — degraded experience
-    P3 = "P3"   # Low — minor issue
-    P4 = "P4"   # Trivial — cosmetic / nice to have
+class TicketSource(str, enum.Enum):
+    UI = "UI"
+    EMAIL = "EMAIL"
 
 
 class Severity(str, enum.Enum):
-    CRITICAL = "CRITICAL"   # Complete outage / data loss
-    HIGH = "HIGH"           # Major functionality broken
-    MEDIUM = "MEDIUM"       # Partial impact, workaround exists
-    LOW = "LOW"             # Minor impact
-    TRIVIAL = "TRIVIAL"     # Cosmetic / informational
+    CRITICAL = "CRITICAL"
+    HIGH = "HIGH"
+    MEDIUM = "MEDIUM"
+    LOW = "LOW"
 
 
-class Channel(str, enum.Enum):
-    UI = "UI"
-    EMAIL = "EMAIL"
+class Priority(str, enum.Enum):
+    P0 = "P0"
+    P1 = "P1"
+    P2 = "P2"
+    P3 = "P3"
+
+
+class Environment(str, enum.Enum):
+    PROD = "PROD"
+    STAGE = "STAGE"
+    DEV = "DEV"
 
 
 class EventType(str, enum.Enum):
     CREATED = "CREATED"
     STATUS_CHANGED = "STATUS_CHANGED"
+    ASSIGNED = "ASSIGNED"
     PRIORITY_CHANGED = "PRIORITY_CHANGED"
     SEVERITY_CHANGED = "SEVERITY_CHANGED"
-    AGENT_ASSIGNED = "AGENT_ASSIGNED"
-    AGENT_REASSIGNED = "AGENT_REASSIGNED"
-    SLA_ASSIGNED = "SLA_ASSIGNED"
     SLA_BREACHED = "SLA_BREACHED"
     ESCALATED = "ESCALATED"
     COMMENT_ADDED = "COMMENT_ADDED"
@@ -46,15 +56,18 @@ class EventType(str, enum.Enum):
     CLOSED = "CLOSED"
 
 
-class CustomerTier(str, enum.Enum):
-    FREE = "FREE"
-    STANDARD = "STANDARD"
-    ENTERPRISE = "ENTERPRISE"
+class NotificationChannel(str, enum.Enum):
+    EMAIL = "EMAIL"
+    IN_APP = "IN_APP"
 
 
-class ActorRole(str, enum.Enum):
-    CUSTOMER = "CUSTOMER"
-    AGENT = "AGENT"
-    LEAD = "LEAD"
-    ADMIN = "ADMIN"
-    SYSTEM = "SYSTEM"
+class NotificationStatus(str, enum.Enum):
+    SENT = "SENT"
+    FAILED = "FAILED"
+    PENDING = "PENDING"
+
+
+class MatchField(str, enum.Enum):
+    SUBJECT = "SUBJECT"
+    BODY = "BODY"
+    BOTH = "BOTH"
