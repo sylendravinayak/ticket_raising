@@ -1,4 +1,6 @@
 from functools import lru_cache
+
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,48 +9,34 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
+        extra="allow",
     )
 
-    APP_NAME: str = "Ticketing Genie — Ticketing Service"
-    APP_VERSION: str = "0.1.0"
-    DEBUG: bool = False
-    ENVIRONMENT: str = "development"
-    LOG_LEVEL: str = "INFO"
+    # App
+    log_level: str = Field(default="INFO")
+    environment: str = Field(default="development")
 
-    # ── Databases ──────────────────────────────────────────────────────────
-    DATABASE_URL: str = (
-        "postgresql+asyncpg://postgres:postgres@localhost:5432/ticketing_service"
-    )
-    DATABASE_POOL_SIZE: int = 10
-    DATABASE_MAX_OVERFLOW: int = 20
+    # Database
+    DATABASE_URL: str
 
-    # ── Redis / Celery ─────────────────────────────────────────────────────
-    REDIS_URL: str = "redis://localhost:6379/0"
-    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
-    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
+    # JWT — used to decode tokens issued by Auth Service
+    secret_key: str = Field(default="change-me-at-least-32-chars-long-here")
+    algorithm: str = Field(default="HS256")
+    # Auth Service URL — for cross-service user lookups
+    auth_service_url: str = Field(default="http://localhost:8001")
 
-    # ── Auth Service ───────────────────────────────────────────────────────
-    AUTH_SERVICE_URL: str = "http://localhost:8001"
+    # SLA defaults (minutes)
+    DEFAULT_RESPONSE_TIME_MINUTES: int = 480       # 8 h
+    DEFAULT_RESOLUTION_TIME_MINUTES: int = 2880    # 48 h
+    DEFAULT_ESCALATION_AFTER_MINUTES: int = 120    # 2 
 
-    # ── JWT (used only to read claims set by middleware) ────────────────��──
-    SECRET_KEY: str = "change-me"
-    ALGORITHM: str = "HS256"
+    # Auto-close resolved tickets after N hours
+    auto_close_after_hours: int = Field(default=72)
 
-    # ── SLA defaults (minutes) ─────────────────────────────────────────────
-    DEFAULT_RESPONSE_TIME_MINUTES: int = 480      # 8 h
-    DEFAULT_RESOLUTION_TIME_MINUTES: int = 2880   # 48 h
-    DEFAULT_ESCALATION_AFTER_MINUTES: int = 120   # 2 h after breach
-
-    # ── Auto-close ─────────────────────────────────────────────────────────
-    AUTO_CLOSE_AFTER_HOURS: int = 72
-
-    # ── CORS ───────────────────────────────────────────────────────────────
-    ALLOWED_ORIGINS: list[str] = ["http://localhost:3000"]
+    # Optional: Anthropic LLM for classification
+    anthropic_api_key: str = Field(default="")
 
 
-@lru_cache()
+@lru_cache
 def get_settings() -> Settings:
     return Settings()
-
-
-settings = get_settings()

@@ -11,7 +11,6 @@ if TYPE_CHECKING:
 
 
 class TicketAttachment(Base):
-
     __tablename__ = "ticket_attachments"
 
     attachment_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -21,7 +20,8 @@ class TicketAttachment(Base):
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     file_url: Mapped[str] = mapped_column(String(1024), nullable=False)
 
-    uploaded_by_user_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    # FIX: UUID string from auth service — VARCHAR(36) not INTEGER
+    uploaded_by_user_id: Mapped[str] = mapped_column(String(36), nullable=False)
 
     uploaded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

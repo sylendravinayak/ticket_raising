@@ -21,7 +21,6 @@ class NotificationTemplate(Base):
 
     template_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    # Unique slug used to look up template by code e.g. "TICKET_CREATED_CUSTOMER"
     event_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
 
     channel: Mapped[NotificationChannel] = mapped_column(
@@ -40,7 +39,6 @@ class NotificationTemplate(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
-    # Relationships
     notification_logs: Mapped[list["NotificationLog"]] = relationship(
         "NotificationLog"
     )

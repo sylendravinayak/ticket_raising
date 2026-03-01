@@ -26,7 +26,7 @@ class TicketEvent(Base):
     )
 
     # Cross-service user reference — plain Integer, no FK
-    triggered_by_user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    triggered_by_user_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
 
     event_type: Mapped[EventType] = mapped_column(
         SAEnum(EventType, name="event_type_enum", create_type=True), nullable=False

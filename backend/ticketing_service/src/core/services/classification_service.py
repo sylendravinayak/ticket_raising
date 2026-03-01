@@ -1,5 +1,3 @@
-
-
 import logging
 from dataclasses import dataclass
 
@@ -11,16 +9,16 @@ logger = logging.getLogger(__name__)
 
 _SEVERITY_RANK: dict[Severity, int] = {
     Severity.CRITICAL: 0,
-    Severity.HIGH: 1,
-    Severity.MEDIUM: 2,
-    Severity.LOW: 3,
+    Severity.HIGH:     1,
+    Severity.MEDIUM:   2,
+    Severity.LOW:      3,
 }
 
 _SEVERITY_TO_PRIORITY: dict[Severity, Priority] = {
     Severity.CRITICAL: Priority.P0,
-    Severity.HIGH: Priority.P1,
-    Severity.MEDIUM: Priority.P2,
-    Severity.LOW: Priority.P3,
+    Severity.HIGH:     Priority.P1,
+    Severity.MEDIUM:   Priority.P2,
+    Severity.LOW:      Priority.P3,
 }
 
 
@@ -34,20 +32,21 @@ class ClassificationResult:
 
 class ClassificationService:
     def __init__(self, keyword_repo: KeywordRepository) -> None:
-        self._repo = keyword_repo
+        self._repo = keyword_repo           # ← receives KeywordRepository, NOT AsyncSession
 
     async def classify(self, title: str, description: str) -> ClassificationResult:
         """
         Run all active keyword rules against title + description.
         Returns the highest-severity match, or LOW/P3 default.
         """
+        # ← calls repo method, NOT self.db.execute(...)
         rules: list[KeywordRule] = await self._repo.get_active_rules()
 
         best: KeywordRule | None = None
-        best_rank: int = len(_SEVERITY_RANK)  # worse than any valid rank
+        best_rank: int = len(_SEVERITY_RANK)   # worse than any real rank
 
         title_lower = title.lower()
-        body_lower = description.lower()
+        body_lower  = description.lower()
 
         for rule in rules:
             kw = rule.keyword.lower()
@@ -78,5 +77,5 @@ class ClassificationService:
                 matched_keyword=best.keyword,
             )
 
-        logger.debug("classification: no keyword match — using defaults LOW/P3")
+        logger.debug("classification: no keyword match — defaulting to LOW / P3")
         return ClassificationResult(severity=Severity.LOW, priority=Priority.P3)

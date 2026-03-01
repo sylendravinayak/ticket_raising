@@ -2,11 +2,10 @@ import enum
 
 
 class UserRole(str, enum.Enum):
-    CUSTOMER = "CUSTOMER"
-    AGENT = "AGENT"
-    LEAD = "LEAD"
-    ADMIN = "ADMIN"
-
+    CUSTOMER = "user"
+    AGENT = "support_agent"
+    LEAD = "team_lead"
+    ADMIN = "admin"
 
 class TicketStatus(str, enum.Enum):
     NEW = "NEW"
@@ -71,3 +70,10 @@ class MatchField(str, enum.Enum):
     SUBJECT = "SUBJECT"
     BODY = "BODY"
     BOTH = "BOTH"
+
+
+# ── Added: used by SlaPolicy model and seed script ─────────────────────────
+class CustomerTier(str, enum.Enum):
+    FREE = "FREE"
+    STANDARD = "STANDARD"
+    ENTERPRISE = "ENTERPRISE"

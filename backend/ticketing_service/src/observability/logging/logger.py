@@ -8,7 +8,7 @@ from src.config.settings import get_settings
 
 
 def setup_logging() -> None:
-    log_level = getattr(logging, get_settings().LOG_LEVEL.upper(), logging.INFO)
+    log_level = getattr(logging, get_settings().log_level.upper(), logging.INFO)
     logging.basicConfig(format="%(message)s", stream=sys.stdout, level=log_level)
     structlog.configure(
         processors=[

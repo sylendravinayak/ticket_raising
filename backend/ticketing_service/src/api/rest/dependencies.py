@@ -20,21 +20,21 @@ DBSession = Annotated[AsyncSession, Depends(get_db)]
 
 
 # ── Current user context (set by JWT middleware) ────────────────────────────
-def get_current_user_id(request: Request) -> int:
+def get_current_user_id(request: Request) -> str:           # FIX: int → str
     user_id = getattr(request.state, "user_id", None)
     if not user_id:
         raise InvalidTokenError("Missing user context — JWT middleware not applied.")
-    return int(user_id)
+    return str(user_id)                                     # FIX: str() not int()
 
 
 def get_current_user_role(request: Request) -> str:
     role = getattr(request.state, "user_role", None)
     if not role:
         raise InvalidTokenError("Missing role context — JWT middleware not applied.")
-    return role
+    return str(role)
 
 
-CurrentUserID = Annotated[int, Depends(get_current_user_id)]
+CurrentUserID   = Annotated[str, Depends(get_current_user_id)]   # FIX: str
 CurrentUserRole = Annotated[str, Depends(get_current_user_role)]
 
 

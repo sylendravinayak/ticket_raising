@@ -7,6 +7,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+# ── Only import what actually exists in enum.py ────────────────────────────
 from src.constants.enum import (
     Environment, Priority, Severity, TicketSource, TicketStatus,
 )
@@ -34,9 +35,7 @@ class Ticket(Base):
     environment: Mapped[Environment] = mapped_column(
         SAEnum(Environment, name="environment_enum", create_type=True), nullable=False
     )
-    area_of_concern: Mapped[Optional[str]] = mapped_column(
-        String(255), nullable=True
-    )
+    area_of_concern: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     source: Mapped[TicketSource] = mapped_column(
         SAEnum(TicketSource, name="ticket_source_enum", create_type=True),
         nullable=False,
@@ -54,13 +53,12 @@ class Ticket(Base):
         default=TicketStatus.NEW,
     )
 
-    customer_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    assignee_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
-  
+    customer_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    assignee_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
+
     sla_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("slas.sla_id", ondelete="SET NULL"), nullable=True
     )
-
     customer_tier_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("customer_tiers.tier_id", ondelete="SET NULL"), nullable=True
     )

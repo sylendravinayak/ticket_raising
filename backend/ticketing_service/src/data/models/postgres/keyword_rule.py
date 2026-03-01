@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import Boolean, DateTime, Enum as SAEnum, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
-from src.constants.enum import MatchField, Severity
+from src.constants.enum import Severity,MatchField
 from src.data.models.postgres.base import Base
 
 

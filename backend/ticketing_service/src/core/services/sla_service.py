@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from src.config.settings import settings
+from src.config.settings import get_settings
 from src.constants.enum import Priority, Severity
 from src.data.repositories.sla_repository import SLARepository
 
@@ -36,7 +36,7 @@ class SLAService:
     ) -> SLADeadlines:
         """
         Look up SLARule for (tier, severity, priority) and compute deadlines.
-        Falls back to configured defaults if no rule found.
+        Falls back to configured defaults if no matching rule found.
         """
         now = from_dt or datetime.now(timezone.utc)
         sla = None
@@ -54,9 +54,9 @@ class SLAService:
             )
             return SLADeadlines(
                 sla_id=sla.sla_id if sla else None,
-                response_due_at=now + timedelta(minutes=settings.DEFAULT_RESPONSE_TIME_MINUTES),
-                resolution_due_at=now + timedelta(minutes=settings.DEFAULT_RESOLUTION_TIME_MINUTES),
-                escalation_after_minutes=settings.DEFAULT_ESCALATION_AFTER_MINUTES,
+                response_due_at=now + timedelta(minutes=get_settings().DEFAULT_RESPONSE_TIME_MINUTES),
+                resolution_due_at=now + timedelta(minutes=get_settings().DEFAULT_RESOLUTION_TIME_MINUTES),
+                escalation_after_minutes=get_settings().DEFAULT_ESCALATION_AFTER_MINUTES,
                 used_default=True,
             )
 
@@ -74,4 +74,4 @@ class SLAService:
         priority: Priority,
     ) -> SLADeadlines:
         """Fresh SLA deadlines from right now — used on REOPENED transition."""
-        return await self.resolve_deadlines(customer_tier_id, severity, priority)
+        return await self.resolve_deadlines(customer_tier_id, severity, priority, from_dt=datetime.now(timezone.utc))

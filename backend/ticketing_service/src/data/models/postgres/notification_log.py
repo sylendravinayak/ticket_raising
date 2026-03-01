@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 class NotificationLog(Base):
     """
     Tracks every notification dispatched (or queued) for a ticket event.
-    recipient_user_id  →  plain Integer (Auth Service user_id, no FK).
+    recipient_user_id  →  plain String (Auth Service user_id, no FK).
     """
 
     __tablename__ = "notification_logs"
@@ -24,8 +24,8 @@ class NotificationLog(Base):
         BigInteger, ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False
     )
 
-    # Cross-service user reference — plain Integer, no FK
-    recipient_user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    # Cross-service user reference — plain String, no FK
+    recipient_user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
 
     channel: Mapped[NotificationChannel] = mapped_column(
         SAEnum(NotificationChannel, name="notification_channel_enum", create_type=True),

@@ -30,11 +30,9 @@ class TicketRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    # ──────────────────────────────────────────
-    # READ
-    # ──────────────────────────────────────────
+    # ── READ ─────────────────────────────────────────────────────────────────
 
-    async def get_by_id(self, ticket_id: int, eager: bool = False) -> Optional[Ticket]:
+    async def get_by_id(self, ticket_id: int, eager: bool = True) -> Optional[Ticket]:
         stmt = select(Ticket).where(Ticket.ticket_id == ticket_id)
         if eager:
             stmt = stmt.options(*_EAGER)
@@ -43,21 +41,23 @@ class TicketRepository:
 
     async def get_by_number(self, ticket_number: str) -> Optional[Ticket]:
         result = await self.db.execute(
-            select(Ticket).where(Ticket.ticket_number == ticket_number)
+            select(Ticket)
+            .where(Ticket.ticket_number == ticket_number)
+            .options(*_EAGER)
         )
         return result.scalar_one_or_none()
 
     async def next_ticket_number(self) -> str:
         """
         Generates TKT-XXXX.
-        Uses COUNT + 1 for simplicity; safe under a DB-level unique constraint.
+        Uses COUNT + 1; safe under the DB-level unique constraint on ticket_number.
         """
         result = await self.db.execute(select(func.count(Ticket.ticket_id)))
         count = result.scalar_one()
         return f"TKT-{count + 1:04d}"
 
     async def list_for_customer(
-        self, customer_id: int, filters: TicketListFilters
+        self, customer_id: str, filters: TicketListFilters
     ) -> tuple[int, list[Ticket]]:
         stmt = select(Ticket).where(Ticket.customer_id == customer_id)
         stmt = self._apply_filters(stmt, filters)
@@ -66,7 +66,7 @@ class TicketRepository:
     async def list_all(
         self, filters: TicketListFilters
     ) -> tuple[int, list[Ticket]]:
-        stmt = select(Ticket)
+        stmt = select(Ticket).options(*_EAGER)
         stmt = self._apply_filters(stmt, filters)
         return await self._paginate(stmt, filters)
 
@@ -75,96 +75,67 @@ class TicketRepository:
             select(Ticket).where(
                 Ticket.resolution_due_at < now,
                 Ticket.status.not_in([TicketStatus.RESOLVED, TicketStatus.CLOSED]),
-                Ticket.is_breached == False,
+                Ticket.is_breached == False,  # noqa: E712
             )
         )
         return list(result.scalars().all())
 
     async def get_escalatable(self, now: datetime) -> list[Ticket]:
-        """
-        Breached tickets not yet escalated, still open.
-        Escalation timing is evaluated inside the service using SLARule.escalation_after_minutes.
-        """
         result = await self.db.execute(
             select(Ticket).where(
-                Ticket.is_breached == True,
-                Ticket.is_escalated == False,
+                Ticket.is_breached == True,   # noqa: E712
+                Ticket.is_escalated == False, # noqa: E712
                 Ticket.status.not_in([TicketStatus.RESOLVED, TicketStatus.CLOSED]),
             )
         )
         return list(result.scalars().all())
 
-    async def get_auto_closeable(self, cutoff: datetime) -> list[Ticket]:
-        result = await self.db.execute(
-            select(Ticket).where(
-                Ticket.status == TicketStatus.RESOLVED,
-                Ticket.resolved_at <= cutoff,
-            )
-        )
-        return list(result.scalars().all())
-
-    async def get_events(self, ticket_id: int) -> list[TicketEvent]:
-        result = await self.db.execute(
-            select(TicketEvent)
-            .where(TicketEvent.ticket_id == ticket_id)
-            .order_by(TicketEvent.created_at.desc())
-        )
-        return list(result.scalars().all())
-
-    # ──────────────────────────────────────────
-    # WRITE
-    # ──────────────────────────────────────────
+    # ── WRITE ────────────────────────────────────────────────────────────────
 
     async def create(self, ticket: Ticket) -> Ticket:
+        """Persist a new ticket and return it with all relations loaded."""
         self.db.add(ticket)
         await self.db.flush()
-        await self.db.refresh(ticket)
-        return ticket
+        # Re-fetch with eager relations so Pydantic can serialise immediately
+        return await self.get_by_id(ticket.ticket_id, eager=True)
 
     async def save(self, ticket: Ticket) -> Ticket:
+        """Update an existing ticket and return it with relations loaded."""
         self.db.add(ticket)
         await self.db.flush()
-        await self.db.refresh(ticket)
-        return ticket
+        return await self.get_by_id(ticket.ticket_id, eager=True)
 
-    async def add_event(self, event: TicketEvent) -> TicketEvent:
+    async def add_event(self, event: TicketEvent) -> None:
         self.db.add(event)
         await self.db.flush()
-        return event
 
-    async def add_comment(self, comment: TicketComment) -> TicketComment:
-        self.db.add(comment)
-        await self.db.flush()
-        await self.db.refresh(comment)
-        return comment
-
-    async def add_attachment(self, attachment: TicketAttachment) -> TicketAttachment:
+    async def add_attachment(self, attachment: TicketAttachment) -> None:
         self.db.add(attachment)
         await self.db.flush()
-        return attachment
 
-    async def add_notification_log(self, log: NotificationLog) -> NotificationLog:
+    async def add_comment(self, comment: TicketComment) -> None:
+        self.db.add(comment)
+        await self.db.flush()
+
+    async def add_escalation(self, escalation: EscalationHistory) -> None:
+        self.db.add(escalation)
+        await self.db.flush()
+
+    async def add_notification_log(self, log: NotificationLog) -> None:
         self.db.add(log)
         await self.db.flush()
-        return log
 
-    async def add_escalation(self, esc: EscalationHistory) -> EscalationHistory:
-        self.db.add(esc)
-        await self.db.flush()
-        return esc
+    # ── INTERNAL ─────────────────────────────────────────────────────────────
 
-    # ──────────────────────────────────────────
-    # HELPERS
-    # ──────────────────────────────────────────
-
-    @staticmethod
-    def _apply_filters(stmt, filters: TicketListFilters):
+    def _apply_filters(self, stmt, filters: TicketListFilters):
         if filters.status:
             stmt = stmt.where(Ticket.status == filters.status)
         if filters.severity:
             stmt = stmt.where(Ticket.severity == filters.severity)
         if filters.priority:
             stmt = stmt.where(Ticket.priority == filters.priority)
+        if filters.customer_id:
+            stmt = stmt.where(Ticket.customer_id == filters.customer_id)
         if filters.assignee_id:
             stmt = stmt.where(Ticket.assignee_id == filters.assignee_id)
         if filters.is_breached is not None:
@@ -181,10 +152,8 @@ class TicketRepository:
         )
         total = count_result.scalar_one()
 
-        offset = (filters.page - 1) * filters.page_size
-        result = await self.db.execute(
-            stmt.order_by(Ticket.created_at.desc())
-            .offset(offset)
-            .limit(filters.page_size)
-        )
+        stmt = stmt.order_by(Ticket.created_at.desc())
+        stmt = stmt.offset((filters.page - 1) * filters.page_size).limit(filters.page_size)
+
+        result = await self.db.execute(stmt)
         return total, list(result.scalars().all())

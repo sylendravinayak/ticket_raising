@@ -1,17 +1,19 @@
+
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
-from src.data.models.postgres.base import Base
 from fastapi import FastAPI
-from fastapi.concurrency import asynccontextmanager
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 
-from src.api.middleware import register_middlewares
-from src.api.rest.routes.health import router as health_router
-from src.data.clients.postgres_client import engine
-from src.observability.logging.logger import setup_logging
-from src.api.middleware.cors import setup_cors
 from src.api.middleware.error_handler import register_exception_handlers
-from src.api.rest.routes.tickets import router as tickets_router
-import src.data.models.postgres
+from src.api.rest.routes.health import router as health_router
+from src.api.rest.routes.tickets import router as ticket_router
+from src.data.clients.postgres_client import engine
+from src.data.models.postgres import Base  
+from src.observability.logging.logger import setup_logging
+
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
@@ -20,16 +22,52 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     yield
     await engine.dispose()
 
+
 def create_app() -> FastAPI:
     setup_logging()
     app = FastAPI(
-        title="Ticket Genie",
-        version="2.0",
-        lifespan=lifespan
+        title="Ticketing Genie — Ticketing Service",
+        version="1.0.0",
+        description=(
+            "## Authentication\n"
+            "1. Login via **Auth Service** `POST /api/v1/auth/login` to get a token.\n"
+            "2. Click **Authorize** here and paste: `Bearer <token>`"
+        ),
+        lifespan=lifespan,
     )
+
+    # ── CORS ──────────────────────────────────────────────────────────────
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    from src.api.middleware.jwt_middleware import JWTMiddleware
+    app.add_middleware(JWTMiddleware)
+
     register_exception_handlers(app)
-    setup_cors(app)
 
     app.include_router(health_router)
-    app.include_router(tickets_router, prefix="/api/v1")
+    app.include_router(ticket_router)
+    def custom_openapi() -> dict:
+        if app.openapi_schema:
+            return app.openapi_schema
+        schema = get_openapi(
+            title=app.title, version=app.version,
+            description=app.description, routes=app.routes,
+        )
+        schema.setdefault("components", {})["securitySchemes"] = {
+            "BearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}
+        }
+        for path_data in schema.get("paths", {}).values():
+            for operation in path_data.values():
+                if isinstance(operation, dict):
+                    operation.setdefault("security", [{"BearerAuth": []}])
+        app.openapi_schema = schema
+        return schema
+
+    app.openapi = custom_openapi  
     return app

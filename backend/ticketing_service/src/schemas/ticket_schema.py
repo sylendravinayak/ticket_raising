@@ -1,6 +1,5 @@
 """
-Pydantic v2 schemas for the Ticket creation pipeline.
-All request/response models live here.
+Pydantic v2 schemas for the Ticket pipeline.
 """
 
 from datetime import datetime
@@ -20,10 +19,7 @@ from src.constants.enum import (
 )
 
 
-# ─────────────────────────────────────────────
-# Attachment
-# ─────────────────────────────────────────────
-
+# ── Attachment ────────────────────────────────────────────────────────────────
 class AttachmentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -31,20 +27,17 @@ class AttachmentResponse(BaseModel):
     ticket_id: int
     file_name: str
     file_url: str
-    uploaded_by_user_id: int
+    uploaded_by_user_id: str        # FIX: int → str (UUID)
     uploaded_at: datetime
 
 
-# ─────────────────────────────────────────────
-# Ticket Event
-# ─────────────────────────────────────────────
-
+# ── Ticket Event ──────────────────────────────────────────────────────────────
 class TicketEventResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     event_id: int
     ticket_id: int
-    triggered_by_user_id: Optional[int] = None
+    triggered_by_user_id: Optional[str] = None   # FIX: int → str (UUID)
     event_type: EventType
     field_name: Optional[str] = None
     old_value: Optional[str] = None
@@ -53,26 +46,21 @@ class TicketEventResponse(BaseModel):
     created_at: datetime
 
 
-# ─────────────────────────────────────────────
-# Comment
-# ─────────────────────────────────────────────
-
+# ── Comment ───────────────────────────────────────────────────────────────────
 class CommentResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     comment_id: int
     ticket_id: int
-    user_id: int
-    message: str
+    author_id: str                   # FIX: was user_id: int — column is author_id: str
+    author_role: str
+    body: str                        # FIX: was message — column is body
     is_internal: bool
-    is_mandatory_note: bool
+    attachments: Optional[list] = None
     created_at: datetime
 
 
-# ─────────────────────────────────────────────
-# Ticket — CREATE
-# ─────────────────────────────────────────────
-
+# ── Create ────────────────────────────────────────────────────────────────────
 class TicketCreateRequest(BaseModel):
     title: str = Field(..., min_length=3, max_length=500)
     description: str = Field(..., min_length=10)
@@ -80,30 +68,21 @@ class TicketCreateRequest(BaseModel):
     environment: Environment
     source: TicketSource = TicketSource.UI
     area_of_concern: Optional[str] = Field(default=None, max_length=255)
-    attachments: list[str] = Field(default_factory=list)  # list of file URLs
+    attachments: list[str] = Field(default_factory=list)
 
 
-# ─────────────────────────────────────────────
-# Ticket — STATUS TRANSITION
-# ─────────────────────────────────────────────
-
+# ── Status transition ─────────────────────────────────────────────────────────
 class TicketStatusUpdateRequest(BaseModel):
     new_status: TicketStatus
     comment: Optional[str] = Field(default=None, max_length=2000)
 
 
-# ─────────────────────────────────────────────
-# Ticket — ASSIGN
-# ─────────────────────────────────────────────
-
+# ── Assign ────────────────────────────────────────────────────────────────────
 class TicketAssignRequest(BaseModel):
-    assignee_id: int = Field(..., gt=0)
+    assignee_id: str = Field(...)    # FIX: int → str (UUID)
 
 
-# ─────────────────────────────────────────────
-# Ticket — RESPONSE
-# ─────────────────────────────────────────────
-
+# ── Brief response (list view) ────────────────────────────────────────────────
 class TicketBriefResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -117,56 +96,62 @@ class TicketBriefResponse(BaseModel):
     product: str
     area_of_concern: Optional[str] = None
     source: TicketSource
-    customer_id: int
-    assignee_id: Optional[int] = None
+    customer_id: str                 # FIX: int → str (UUID)
+    assignee_id: Optional[str] = None   # FIX: int → str (UUID)
     sla_id: Optional[int] = None
     customer_tier_id: Optional[int] = None
-    is_breached: bool
-    is_escalated: bool
     response_due_at: Optional[datetime] = None
     resolution_due_at: Optional[datetime] = None
+    is_breached: bool = False
+    is_escalated: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+
+# ── Detail response (single ticket) ──────────────────────────────────────────
+class TicketDetailResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    ticket_id: int
+    ticket_number: str
+    title: str
+    description: str
+    product: str
+    environment: Environment
+    area_of_concern: Optional[str] = None
+    source: TicketSource
+    severity: Severity
+    priority: Priority
+    status: TicketStatus
+    customer_id: str                 # FIX: int → str (UUID)
+    assignee_id: Optional[str] = None   # FIX: int → str (UUID)
+    sla_id: Optional[int] = None
+    customer_tier_id: Optional[int] = None
+    response_due_at: Optional[datetime] = None
+    resolution_due_at: Optional[datetime] = None
+    is_breached: bool = False
+    is_escalated: bool = False
     hold_started_at: Optional[datetime] = None
-    total_hold_minutes: int
+    total_hold_minutes: int = 0
     resolved_at: Optional[datetime] = None
     closed_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
-
-class TicketDetailResponse(TicketBriefResponse):
-    description: str
-    attachments: list[AttachmentResponse] = []
-    comments: list[CommentResponse] = []
-    events: list[TicketEventResponse] = []
+    # Eagerly loaded relations
+    events: list[TicketEventResponse] = Field(default_factory=list)
+    comments: list[CommentResponse] = Field(default_factory=list)
+    attachments: list[AttachmentResponse] = Field(default_factory=list)
 
 
-# ─────────────────────────────────────────────
-# Ticket — LIST FILTERS
-# ─────────────────────────────────────────────
-
+# ── Filters (used by list endpoint) ───────────────────────────────────────────
 class TicketListFilters(BaseModel):
     status: Optional[TicketStatus] = None
-    priority: Optional[Priority] = None
     severity: Optional[Severity] = None
+    priority: Optional[Priority] = None
     is_breached: Optional[bool] = None
     is_escalated: Optional[bool] = None
-    assignee_id: Optional[int] = None
-    page: int = Field(default=1, ge=1)
-    page_size: int = Field(default=20, ge=1, le=100)
-
-
-# ─────────────────────────────────────────────
-# Notification Log
-# ─────────────────────────────────────────────
-
-class NotificationLogResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    notification_id: int
-    ticket_id: int
-    recipient_user_id: int
-    channel: NotificationChannel
-    event_type: str
-    status: NotificationStatus
-    sent_at: Optional[datetime] = None
-    created_at: datetime
+    customer_id: Optional[str] = None   # FIX: int → str (UUID)
+    assignee_id: Optional[str] = None   # FIX: int → str (UUID)
+    page: int = 1
+    page_size: int = 20

@@ -9,23 +9,39 @@ Public paths bypass auth entirely.
 import logging
 from typing import Callable
 
+
 from jose import jwt
+from jose.exceptions import ExpiredSignatureError, JWTError
+
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-from src.config.settings import settings
+from src.config.settings import get_settings
 
 logger = logging.getLogger(__name__)
+settings = get_settings()
 
+# Paths that never require a token
+_PUBLIC_PATHS: set[str] = {"/health", "/health/", "/docs", "/redoc", "/openapi.json"}
+_PUBLIC_PREFIXES: tuple[str, ...] = ("/docs/", "/redoc/")
+
+
+def _is_public(path: str) -> bool:
+    if path in _PUBLIC_PATHS:
+        return True
+    return any(path.startswith(p) for p in _PUBLIC_PREFIXES)
 
 
 class JWTMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
 
-    
+        # Skip auth for public paths
+        if _is_public(request.url.path):
+            return await call_next(request)
+
         auth_header: str = request.headers.get("Authorization", "")
 
         if not auth_header:
@@ -51,10 +67,11 @@ class JWTMiddleware(BaseHTTPMiddleware):
         try:
             payload = jwt.decode(
                 token,
-                settings.SECRET_KEY,
-                algorithms=[settings.ALGORITHM],
+                settings.secret_key,
+                algorithms=[settings.algorithm],
             )
-        except jwt.ExpiredSignatureError:
+        except ExpiredSignatureError:
+            # ── FIX: was jwt.ExpiredSignatureError (doesn't exist on jose.jwt)
             return JSONResponse(
                 status_code=401,
                 content={
@@ -62,7 +79,8 @@ class JWTMiddleware(BaseHTTPMiddleware):
                     "error_type": "TokenExpired",
                 },
             )
-        except jwt.InvalidTokenError as exc:
+        except JWTError as exc:
+            # ── FIX: was jwt.InvalidTokenError (doesn't exist on jose.jwt)
             logger.warning("jwt_middleware: invalid token — %s", exc)
             return JSONResponse(
                 status_code=401,
@@ -72,7 +90,7 @@ class JWTMiddleware(BaseHTTPMiddleware):
                 },
             )
 
-        # ── Validate required claims ─────────────────────────────────────
+        # Validate required claims
         user_id = payload.get("sub")
         user_role = payload.get("role")
 
@@ -85,8 +103,8 @@ class JWTMiddleware(BaseHTTPMiddleware):
                 },
             )
 
-        # ── Inject into request state ────────────────────────────────────
-        request.state.user_id = int(user_id)
+        # Inject into request state — read by dependencies.py
+        request.state.user_id = user_id          # UUID string from auth service
         request.state.user_role = str(user_role)
 
         logger.debug(

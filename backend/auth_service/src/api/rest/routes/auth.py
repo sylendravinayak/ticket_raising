@@ -1,58 +1,43 @@
-
-
 from typing import Annotated
-
-from fastapi import APIRouter, Depends, Request
+import uuid
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import APIRouter, Depends, Request, Response
-from src.utils.security import set_auth_cookies, clear_auth_cookies
-from src.schemas.auth import AccessTokenResponse
+
 from src.api.rest.dependencies.auth import get_current_active_user
 from src.core.services.auth_service import AuthService
 from src.data.clients.postgres_client import get_db
 from src.data.models.postgres.user import User
+from src.data.repositories.user_repository import UserRepository
 from src.observability.logging.logger import get_logger
-from fastapi import HTTPException
 from src.schemas.auth import (
+    AccessTokenResponse,
     LoginRequest,
-    LogoutRequest,
-    RefreshRequest,
     SignupRequest,
     SignupResponse,
     TokenResponse,
     UserResponse,
 )
+from src.utils.security import clear_auth_cookies, set_auth_cookies
 
 logger = get_logger(__name__)
-
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
-def _get_service(
-    session: Annotated[AsyncSession, Depends(get_db)],
-) -> AuthService:
+
+def _get_service(session: Annotated[AsyncSession, Depends(get_db)]) -> AuthService:
     return AuthService(session=session)
 
 
-
-
-@router.post(
-    "/signup",
-    response_model=SignupResponse,
-    status_code=201,
-    summary="Register a new user",
-    description=(
-        "Create a new user account. "
-
-    ),
-)
+# ── SIGNUP ───────────────────────────────────────────────────────────────────
+@router.post("/signup", response_model=SignupResponse, status_code=201)
 async def signup(
     data: SignupRequest,
     service: Annotated[AuthService, Depends(_get_service)],
 ) -> SignupResponse:
     user = await service.signup(data)
-
     return SignupResponse(user=user)
 
+
+# ── LOGIN ────────────────────────────────────────────────────────────────────
 @router.post("/login", response_model=AccessTokenResponse)
 async def login(
     data: LoginRequest,
@@ -61,8 +46,13 @@ async def login(
 ) -> AccessTokenResponse:
     tokens = await service.login(data)
     set_auth_cookies(response, tokens.refresh_token)
-    return AccessTokenResponse(access_token=tokens.access_token, expires_in=tokens.expires_in)
+    return AccessTokenResponse(
+        access_token=tokens.access_token,
+        expires_in=tokens.expires_in,
+    )
 
+
+# ── REFRESH ──────────────────────────────────────────────────────────────────
 @router.post("/refresh", response_model=AccessTokenResponse)
 async def refresh(
     request: Request,
@@ -74,32 +64,56 @@ async def refresh(
         raise HTTPException(status_code=401, detail="No refresh token provided")
     tokens = await service.refresh(refresh_token)
     set_auth_cookies(response, tokens.refresh_token)
-    return AccessTokenResponse(access_token=tokens.access_token, expires_in=tokens.expires_in)
+    return AccessTokenResponse(
+        access_token=tokens.access_token,
+        expires_in=tokens.expires_in,
+    )
 
 
-@router.post("/logout")
+# ── LOGOUT ───────────────────────────────────────────────────────────────────
+@router.post("/logout", status_code=204)
 async def logout(
     request: Request,
     response: Response,
     service: Annotated[AuthService, Depends(_get_service)],
     _current_user: Annotated[User, Depends(get_current_active_user)],
-) -> str:
+) -> None:
     refresh_token = request.cookies.get("refresh_token")
-    if not refresh_token:
-        raise HTTPException(status_code=401, detail="No refresh token provided")
-    await service.logout(refresh_token)
+    if refresh_token:
+        await service.logout(refresh_token)
     clear_auth_cookies(response)
-    return "logout successful"
 
-@router.get(
-    "/me",
-    response_model=UserResponse,
-    summary="Get current user profile",
-    description=(
-        "Returns the profile of the currently authenticated user. "
-    ),
-)
+
+# ── ME ───────────────────────────────────────────────────────────────────────
+@router.get("/me", response_model=UserResponse)
 async def me(
     current_user: Annotated[User, Depends(get_current_active_user)],
 ) -> UserResponse:
     return UserResponse.model_validate(current_user)
+
+
+@router.get(
+    "/users/{user_id}",
+    response_model=UserResponse,
+    tags=["Internal"],
+    summary="Get user by UUID — internal use by Ticketing Service",
+)
+async def get_user_by_id(
+    user_id: str,
+    session: Annotated[AsyncSession, Depends(get_db)],
+) -> UserResponse:
+    """
+    Internal endpoint consumed by Ticketing Service to resolve user details.
+    Accepts the UUID string from the JWT sub claim.
+    """
+    try:
+        uid = uuid.UUID(user_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"Invalid UUID: '{user_id}'")
+
+    repo = UserRepository(session)
+    user = await repo.get_by_id(uid)
+    if not user:
+        raise HTTPException(status_code=404, detail=f"User {user_id} not found")
+
+    return UserResponse.model_validate(user)
