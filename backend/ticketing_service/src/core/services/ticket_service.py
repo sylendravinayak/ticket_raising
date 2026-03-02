@@ -1,4 +1,12 @@
+"""
+Ticket Service — all business logic for the ticket pipeline.
 
+Responsibilities:
+  - Ticket creation (classify → SLA lookup → persist in one transaction)
+  - Status transitions with guard rules
+  - Assignment logic
+  - Read APIs
+"""
 
 import logging
 from datetime import datetime, timedelta, timezone
@@ -40,7 +48,6 @@ from src.schemas.ticket_schema import (
 )
 
 logger = logging.getLogger(__name__)
-
 
 ALLOWED_TRANSITIONS: dict[TicketStatus, list[TicketStatus]] = {
     TicketStatus.NEW: [TicketStatus.ACKNOWLEDGED],

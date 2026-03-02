@@ -1,3 +1,14 @@
+"""
+Ticket routes.
+
+POST   /tickets               create ticket
+PUT    /tickets/{id}/status   transition status
+POST   /tickets/{id}/assign   assign ticket
+GET    /tickets/me            caller's own tickets (role-aware)
+GET    /tickets/{id}          ticket detail
+GET    /tickets               all tickets (team_lead / admin only)
+"""
+
 from typing import Optional
 
 from fastapi import APIRouter, Query, status
@@ -21,7 +32,7 @@ from src.schemas.ticket_schema import (
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 
-
+# ── CREATE ────────────────────────────────────────────────────────────────────
 @router.post(
     "",
     response_model=TicketDetailResponse,
@@ -37,6 +48,7 @@ async def create_ticket(
     return TicketDetailResponse.model_validate(ticket)
 
 
+# ── MY TICKETS (role-aware) ───────────────────────────────────────────────────
 @router.get(
     "/me",
     response_model=PaginatedResponse[TicketBriefResponse],
