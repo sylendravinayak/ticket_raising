@@ -54,8 +54,16 @@ class Ticket(Base):
 
     customer_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     assignee_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
-    
-    
+
+    # ── Routing fields ────────────────────────────────────────────────────────
+    # assigned_agent_id: NULL = ticket is in OPEN queue (unassigned)
+    assigned_agent_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # queue_type: DIRECT (assigned) or OPEN (unassigned / waiting)
+    queue_type: Mapped[str] = mapped_column(String(50), nullable=False, default="DIRECT")
+    # routing_status: SUCCESS (AI assigned) or AI_FAILED (AI could not assign)
+    routing_status: Mapped[str] = mapped_column(String(50), nullable=False, default="SUCCESS")
+    # ─────────────────────────────────────────────────────────────────────────
+
     customer_tier_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("customer_tiers.tier_id", ondelete="SET NULL"), nullable=True
     )
