@@ -21,12 +21,12 @@ logger = logging.getLogger(__name__)
 
 class UserDTO(BaseModel):
     """Minimal user payload returned by Auth Service /api/v1/auth/users/{uuid}"""
-    id: str                              # UUID string — matches auth.users.id
+    id: str                              
     email: str
-    role: str                            # "user" | "support_agent" | "team_lead" | "admin"
+    role: str                           
     is_active: bool = True
     is_verified: bool = False
-    customer_tier_id: Optional[int] = None   # from auth.users.customer_tierid
+    customer_tier_id: Optional[int] = None   
 
 
 class AuthServiceClient:
@@ -86,37 +86,8 @@ class AuthServiceClient:
 
         await asyncio.gather(*[_fetch(uid) for uid in set(user_ids)])
         return results
+        
     
-    async def get_agent_by_lead(self, lead_id: str) -> Optional[UserDTO]:
-        """Fetch a support agent assigned to the given team lead. Returns None if not found."""
-        url = f"{self._base_url}/api/v1/auth/agents/by-lead/{lead_id}"
-        logger.debug("auth_client: fetching agent for lead_id=%s url=%s", lead_id, url)
-
-        try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                resp = await client.get(url)
-        except httpx.TransportError as exc:
-            logger.error(
-                "auth_client: transport error fetching agent for lead_id=%s: %s", lead_id, exc
-            )
-            raise AuthServiceUnavailableError(
-                f"Auth Service unreachable while fetching agent for lead {lead_id}."
-            )
-
-        if resp.status_code == 404:
-            logger.warning("auth_client: no agent found for lead_id=%s", lead_id)
-            return None
-
-        if resp.status_code != 200:
-            logger.error(
-                "auth_client: unexpected status=%s for lead_id=%s body=%s",
-                resp.status_code, lead_id, resp.text,
-            )
-            raise AuthServiceUnavailableError(
-                f"Auth Service returned {resp.status_code} while fetching agent for lead {lead_id}."
-            )
-
-        return UserDTO.model_validate(resp.json())
         
 
 auth_client = AuthServiceClient()

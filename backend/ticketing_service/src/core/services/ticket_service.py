@@ -174,7 +174,6 @@ class TicketService:
         new_status = payload.new_status
         now = datetime.now(timezone.utc)
 
-        # Role-based guard: users (customers) cannot change status
         role = UserRole(current_user_role)
         if role == UserRole.CUSTOMER:
             raise InsufficientPermissionsError(
@@ -221,7 +220,6 @@ class TicketService:
         ticket.status = new_status
         ticket = await self._ticket_repo.save(ticket)
 
-        # Audit event
         await self._ticket_repo.add_event(TicketEvent(
             ticket_id=ticket.ticket_id,
             triggered_by_user_id=current_user_id,
@@ -231,7 +229,6 @@ class TicketService:
             new_value=new_status.value,
         ))
 
-        # Notify customer
         await self._ticket_repo.add_notification_log(NotificationLog(
             ticket_id=ticket.ticket_id,
             recipient_user_id=ticket.customer_id,
