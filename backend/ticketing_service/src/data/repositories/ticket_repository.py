@@ -90,6 +90,25 @@ class TicketRepository:
         )
         return list(result.scalars().all())
 
+    async def get_resolved_by_assignees(
+        self, assignee_ids: list[str],
+    ) -> list[Ticket]:
+        """
+        Return tickets in RESOLVED or CLOSED status for the given assignee IDs.
+        Used by the assignment agent to understand each agent's historical expertise.
+        """
+        if not assignee_ids:
+            return []
+        result = await self.db.execute(
+            select(Ticket)
+            .where(
+                Ticket.assignee_id.in_(assignee_ids),
+                Ticket.status.in_([TicketStatus.RESOLVED, TicketStatus.CLOSED]),
+            )
+            .order_by(Ticket.created_at.desc())
+        )
+        return list(result.scalars().all())
+
     # ── WRITE ────────────────────────────────────────────────────────────────
 
     async def create(self, ticket: Ticket) -> Ticket:

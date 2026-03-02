@@ -1,15 +1,17 @@
 from celery import Celery
 from celery.schedules import crontab
 
-from src.config.settings import settings
+from src.config.settings import get_settings
+
+_settings = get_settings()
 
 celery_app = Celery(
     "ticketing_service",
-    broker=settings.CELERY_BROKER_URL,
-    backend=settings.CELERY_RESULT_BACKEND,
+    broker=_settings.CELERY_BROKER_URL,
+    backend=_settings.CELERY_RESULT_BACKEND,
     include=[
         "src.core.tasks.sla_tasks",
-        "src.core.tasks.assignment_tasks",   # ← NEW
+        "src.core.tasks.assignment_task",
     ],
 )
 

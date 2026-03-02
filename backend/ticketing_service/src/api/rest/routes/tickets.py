@@ -1,12 +1,13 @@
 """
 Ticket routes.
 
-POST   /tickets               create ticket
-PUT    /tickets/{id}/status   transition status
-POST   /tickets/{id}/assign   assign ticket
-GET    /tickets/me            caller's own tickets (role-aware)
-GET    /tickets/{id}          ticket detail
-GET    /tickets               all tickets (team_lead / admin only)
+POST   /tickets                      create ticket
+PUT    /tickets/{id}/status          transition status
+POST   /tickets/{id}/assign          assign ticket
+POST   /tickets/{id}/comments        add comment (may trigger ON_HOLD / IN_PROGRESS)
+GET    /tickets/me                   caller's own tickets (role-aware)
+GET    /tickets/{id}                 ticket detail
+GET    /tickets                      all tickets (team_lead / admin only)
 """
 
 from typing import Optional
@@ -20,9 +21,10 @@ from src.api.rest.dependencies import (
 )
 from src.constants.enum import Priority, Severity, TicketStatus, UserRole
 from src.control.assignment_agent.workflow import run_auto_assign
-from src.control.assignment_agent.workflow import run_auto_assign
 from src.schemas.common_schema import PaginatedResponse
 from src.schemas.ticket_schema import (
+    CommentCreateRequest,
+    CommentResponse,
     TicketAssignRequest,
     TicketBriefResponse,
     TicketCreateRequest,
@@ -82,7 +84,7 @@ async def get_my_tickets(
     )
     total, tickets = await svc.get_my_tickets(
         current_user_id=user_id,
-        current_user_role=user_role,  
+        current_user_role=user_role,
         filters=filters,
     )
     return PaginatedResponse(
@@ -136,7 +138,7 @@ async def list_all_tickets(
     )
 
 
-# ── TICKET DETAIL ─────────────────────────────────────────────────────────────
+# ── TICKET DETAIL ──────────────────────────────────────────────────���──────────
 @router.get(
     "/{ticket_id}",
     response_model=TicketDetailResponse,
@@ -177,6 +179,36 @@ async def update_ticket_status(
     return TicketBriefResponse.model_validate(ticket)
 
 
+# ── ADD COMMENT ───────────────────────────────────────────────────────────────
+@router.post( 
+    "/{ticket_id}/comments",
+    response_model=TicketDetailResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add a comment to a ticket",
+    description=(
+        "Post a comment. Agents/leads/admins can pass special flags:\n\n"
+        "- **triggers_hold=true** → ticket transitions to **ON_HOLD**, SLA timer **pauses**.\n"
+        "- **triggers_resume=true** → ticket transitions to **IN_PROGRESS**, SLA timer **resumes**.\n\n"
+        "Both flags cannot be true simultaneously. "
+        "Plain comments (both false) are allowed by all roles."
+    ),
+)
+async def add_comment(
+    ticket_id: int,
+    payload: CommentCreateRequest,
+    svc: TicketServiceDep,
+    user_id: CurrentUserID,
+    user_role: CurrentUserRole,
+):
+    ticket = await svc.add_comment(
+        ticket_id=ticket_id,
+        payload=payload,
+        current_user_id=user_id,
+        current_user_role=user_role,
+    )
+    return TicketDetailResponse.model_validate(ticket)
+
+
 # ── ASSIGN ────────────────────────────────────────────────────────────────────
 @router.post(
     "/{ticket_id}/assign",
@@ -198,7 +230,6 @@ async def assign_ticket(
     return TicketBriefResponse.model_validate(ticket)
 
 
-
 @router.post(
     "/{ticket_id}/auto-assign",
     summary="AI-powered automatic ticket assignment",
@@ -206,7 +237,7 @@ async def assign_ticket(
 )
 async def auto_assign_ticket(
     ticket_id: int,
-    ticket_title: str,          # pass via query param or extend with a request body
+    ticket_title: str,
     ticket_priority: str,
     user_id: CurrentUserID,
     user_role: CurrentUserRole,

@@ -28,7 +28,7 @@ class AttachmentResponse(BaseModel):
     ticket_id: int
     file_name: str
     file_url: str
-    uploaded_by_user_id: str        # FIX: int → str (UUID)
+    uploaded_by_user_id: str
     uploaded_at: datetime
 
 
@@ -38,7 +38,7 @@ class TicketEventResponse(BaseModel):
 
     event_id: int
     ticket_id: int
-    triggered_by_user_id: Optional[str] = None   # FIX: int → str (UUID)
+    triggered_by_user_id: Optional[str] = None
     event_type: EventType
     field_name: Optional[str] = None
     old_value: Optional[str] = None
@@ -53,15 +53,35 @@ class CommentResponse(BaseModel):
 
     comment_id: int
     ticket_id: int
-    author_id: str                   # FIX: was user_id: int — column is author_id: str
+    author_id: str
     author_role: str
-    body: str                        # FIX: was message — column is body
+    body: str
     is_internal: bool
+    triggers_hold: bool = False
+    triggers_resume: bool = False
     attachments: Optional[list] = None
     created_at: datetime
 
 
-# ── Create ────────────────────────────────────────────────────────────────────
+# ── Comment Create ─────────────────────────────────────────────────────────────
+class CommentCreateRequest(BaseModel):
+    """
+    Request body for POST /tickets/{id}/comments.
+
+    Behaviour:
+      - triggers_hold=True   → ticket transitions ON_HOLD  + SLA timer pauses.
+      - triggers_resume=True → ticket transitions IN_PROGRESS + SLA timer resumes.
+      - Both cannot be True simultaneously.
+    """
+    body: str = Field(..., min_length=1, max_length=5000)
+    is_internal: bool = False
+
+    # Exactly one of these can be True (or both False for a plain comment)
+    triggers_hold: bool = False
+    triggers_resume: bool = False
+
+
+# ── Create ─────────────────────────────────��──────────────────────────────────
 class TicketCreateRequest(BaseModel):
     title: str = Field(..., min_length=3, max_length=500)
     description: str = Field(..., min_length=10)
@@ -80,7 +100,7 @@ class TicketStatusUpdateRequest(BaseModel):
 
 # ── Assign ────────────────────────────────────────────────────────────────────
 class TicketAssignRequest(BaseModel):
-    assignee_id: str = Field(...)    # FIX: int → str (UUID)
+    assignee_id: str = Field(...)
 
 
 # ── Brief response (list view) ────────────────────────────────────────────────
@@ -97,8 +117,8 @@ class TicketBriefResponse(BaseModel):
     product: str
     area_of_concern: Optional[str] = None
     source: TicketSource
-    customer_id: str                 # FIX: int → str (UUID)
-    assignee_id: Optional[str] = None   # FIX: int → str (UUID)
+    customer_id: str
+    assignee_id: Optional[str] = None
     sla_id: Optional[int] = None
     customer_tier_id: Optional[int] = None
     response_due_at: Optional[datetime] = None
@@ -124,8 +144,8 @@ class TicketDetailResponse(BaseModel):
     severity: Severity
     priority: Priority
     status: TicketStatus
-    customer_id: str                 # FIX: int → str (UUID)
-    assignee_id: Optional[str] = None   # FIX: int → str (UUID)
+    customer_id: str
+    assignee_id: Optional[str] = None
     sla_id: Optional[int] = None
     customer_tier_id: Optional[int] = None
     response_due_at: Optional[datetime] = None
@@ -152,28 +172,24 @@ class TicketListFilters(BaseModel):
     priority: Optional[Priority] = None
     is_breached: Optional[bool] = None
     is_escalated: Optional[bool] = None
-    customer_id: Optional[str] = None   # FIX: int → str (UUID)
-    assignee_id: Optional[str] = None   # FIX: int → str (UUID)
+    customer_id: Optional[str] = None
+    assignee_id: Optional[str] = None
     page: int = 1
     page_size: int = 20
+
 
 class TicketTimelineResponse(BaseModel):
     """
     Projects a STATUS_CHANGED TicketEvent as a timeline entry.
-    from_status maps to TicketEvent.from_status
-    to_status   maps to TicketEvent.new_value
-    changed_by  maps to TicketEvent.triggered_by_user_id (or "SYSTEM" if None)
-    changed_at  maps to TicketEvent.created_at
-    reason      maps to TicketEvent.reason
     """
     model_config = ConfigDict(from_attributes=True)
 
     event_id: int
     ticket_id: int
-    from_status: Optional[str] = None      # None on creation event
-    to_status: str                          # maps from new_value
-    changed_by: Optional[str] = None       # None = SYSTEM triggered
-    changed_at: datetime                    # maps from created_at
+    from_status: Optional[str] = None
+    to_status: str
+    changed_by: Optional[str] = None
+    changed_at: datetime
     reason: Optional[str] = None
 
     @classmethod

@@ -19,6 +19,15 @@ class AgentRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_available_agents(self) -> list[AgentProfile]:
+        """
+        Returns all AgentProfiles that are currently available for assignment.
+        """
+        result = await self.db.execute(
+            select(AgentProfile).where(AgentProfile.is_available == True)  # noqa: E712
+        )
+        return list(result.scalars().all())
+
     async def get_available_leads(self) -> list[AgentProfile]:
         """
         Returns AgentProfiles whose Auth Service role is LEAD.

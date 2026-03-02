@@ -13,7 +13,11 @@ from src.data.repositories.agent_repository import AgentRepository
 from src.data.repositories.ticket_repository import TicketRepository
 from src.core.services.ticket_service import TicketService
 from src.schemas.ticket_schema import TicketAssignRequest
-from src.control.assignment_agent.tools import get_available_agents, assign_ticket_to_agent
+from src.control.assignment_agent.tools import (
+    get_available_agents,
+    get_agent_resolution_history,
+    assign_ticket_to_agent,
+)
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -24,14 +28,18 @@ def build_assignment_agent():
     Reuse this instance — it is stateless between invocations.
     """
     llm = ChatGroq(
-        model="llama3-70b-8192",          # or "mixtral-8x7b-32768"
+        model="llama-3.3-70b-versatile",
         api_key=settings.groq_api_key,
         temperature=0,
     )
 
     agent = create_react_agent(
         model=llm,
-        tools=[get_available_agents, assign_ticket_to_agent],
+        tools=[
+            get_available_agents,
+            get_agent_resolution_history,
+            assign_ticket_to_agent,
+        ],
     )
     return agent
 

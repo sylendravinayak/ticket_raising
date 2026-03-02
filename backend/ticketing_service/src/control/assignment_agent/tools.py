@@ -1,13 +1,15 @@
 """
 AI Assignment Agent using LangChain's create_react_agent + Groq LLM.
 
-This agent has two tools:
-  1. get_available_agents  — queries agent_profiles from the DB
-  2. assign_ticket_to_agent — calls TicketService.assign_ticket
+This agent has three tools:
+  1. get_available_agents          — queries agent_profiles from the DB
+  2. get_agent_resolution_history  — returns what kinds of tickets each agent resolved before
+  3. assign_ticket_to_agent        — calls TicketService.assign_ticket
 """
 
 import json
 import logging
+from collections import defaultdict
 from typing import Any
 
 from langchain_core.tools import tool
@@ -16,6 +18,7 @@ from langchain_groq import ChatGroq
 from langgraph.prebuilt import create_react_agent
 
 from src.config.settings import get_settings
+from src.data.clients.auth_client import auth_client
 from src.data.clients.postgres_client import AsyncSessionFactory
 from src.data.repositories.agent_repository import AgentRepository
 from src.data.repositories.ticket_repository import TicketRepository
@@ -59,6 +62,70 @@ async def get_available_agents(dummy: str = "") -> str:
 
 
 @tool
+async def get_agent_resolution_history(agent_user_ids_json: str = "[]") -> str:
+    """
+    Retrieve the resolution history for the given agents.
+
+    Input: A JSON array of agent user_id values, e.g. '["1", "2", "3"]'.
+           If empty or "[]", returns an empty result.
+
+    Returns a JSON object keyed by agent user_id, where each value contains:
+      - total_resolved: number of tickets the agent resolved
+      - by_product: dict mapping product name → count
+      - by_area_of_concern: dict mapping area_of_concern → count
+      - by_severity: dict mapping severity → count
+      - by_priority: dict mapping priority → count
+
+    Use this data to match agents with tickets they have the most experience in.
+    """
+    try:
+        agent_ids = json.loads(agent_user_ids_json)
+        if not isinstance(agent_ids, list):
+            agent_ids = []
+        # Ensure all IDs are strings
+        agent_ids = [str(aid) for aid in agent_ids]
+    except (json.JSONDecodeError, TypeError):
+        agent_ids = []
+
+    if not agent_ids:
+        return json.dumps({"history": {}, "message": "No agent IDs provided."})
+
+    async with AsyncSessionFactory() as session:
+        ticket_repo = TicketRepository(session)
+        resolved_tickets = await ticket_repo.get_resolved_by_assignees(agent_ids)
+
+    # Build per-agent summary
+    history: dict[str, dict[str, Any]] = {}
+    for aid in agent_ids:
+        history[aid] = {
+            "total_resolved": 0,
+            "by_product": defaultdict(int),
+            "by_area_of_concern": defaultdict(int),
+            "by_severity": defaultdict(int),
+            "by_priority": defaultdict(int),
+        }
+
+    for t in resolved_tickets:
+        aid = str(t.assignee_id)
+        if aid not in history:
+            continue
+        h = history[aid]
+        h["total_resolved"] += 1
+        h["by_product"][t.product] += 1
+        if t.area_of_concern:
+            h["by_area_of_concern"][t.area_of_concern] += 1
+        h["by_severity"][t.severity.value] += 1
+        h["by_priority"][t.priority.value] += 1
+
+    # Convert defaultdicts to plain dicts for JSON serialisation
+    for aid in history:
+        for key in ("by_product", "by_area_of_concern", "by_severity", "by_priority"):
+            history[aid][key] = dict(history[aid][key])
+
+    return json.dumps({"history": history})
+
+
+@tool
 async def assign_ticket_to_agent(input_json: str) -> str:
     """
     Assign a ticket to a specific agent.
@@ -84,9 +151,7 @@ async def assign_ticket_to_agent(input_json: str) -> str:
         return json.dumps({"error": f"Invalid input: {exc}"})
 
     async with AsyncSessionFactory() as session:
-        ticket_repo = TicketRepository(session)
-        agent_repo = AgentRepository(session)
-        svc = TicketService(ticket_repo=ticket_repo, agent_repo=agent_repo)
+        svc = TicketService(db=session, auth_client=auth_client)
 
         try:
             ticket = await svc.assign_ticket(

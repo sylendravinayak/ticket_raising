@@ -38,11 +38,15 @@ async def run_auto_assign(
         f"Priority    : {ticket_priority}\n\n"
         f"Steps:\n"
         f"1. Call `get_available_agents` to list all available support agents.\n"
-        f"2. Pick the most suitable available agent "
-        f"   (prefer agents with lower current load / matching tier).\n"
-        f"3. Call `assign_ticket_to_agent` with the ticket and chosen agent details:\n"
+        f"2. Call `get_agent_resolution_history` with the user_ids from step 1 "
+        f"   to see what kinds of tickets each agent has resolved before.\n"
+        f"3. Pick the most suitable available agent by considering:\n"
+        f"   - Agent's past experience with similar products/areas/severities\n"
+        f"   - Agents with lower current load / matching tier\n"
+        f"   - Agents who have resolved similar tickets before should be preferred\n"
+        f"4. Call `assign_ticket_to_agent` with the ticket and chosen agent details:\n"
         f"   assigner_id={assigner_id}, assigner_role={assigner_role}\n"
-        f"4. Report the final assignment result clearly."
+        f"5. Report the final assignment result clearly, including why the agent was chosen."
     )
 
     result = await agent.ainvoke({"messages": [HumanMessage(content=prompt)]})

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, Text, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.data.models.postgres.base import Base
@@ -14,7 +14,12 @@ if TYPE_CHECKING:
 class TicketComment(Base):
     """
     Comments / replies on a ticket.
-    user_id  →  plain Integer (Auth Service user_id, no FK).
+    
+    Special flags:
+      triggers_hold   — if True, posting this comment transitions ticket → ON_HOLD
+                        and pauses the resolution SLA timer.
+      triggers_resume — if True, posting this comment transitions ticket → IN_PROGRESS
+                        and resumes the resolution SLA timer.
     """
 
     __tablename__ = "ticket_comments"
@@ -24,12 +29,20 @@ class TicketComment(Base):
         BigInteger, ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False
     )
 
-    # Cross-service user reference — plain Integer, no FK
-    user_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    # Cross-service user reference — plain String (UUID from Auth Service)
+    author_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    author_role: Mapped[str] = mapped_column(String(50), nullable=False)
 
-    message: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
     is_internal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_mandatory_note: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+    # ── Status-driving flags ──────────────────────────────────────────────────
+    # True  → posting this comment triggers ON_HOLD transition (SLA pauses)
+    triggers_hold: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # True  → posting this comment triggers IN_PROGRESS transition (SLA resumes)
+    triggers_resume: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
