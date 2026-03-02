@@ -1,0 +1,157 @@
+"""
+Pydantic v2 schemas for the Ticket pipeline.
+"""
+
+from datetime import datetime
+from typing import Optional
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from src.constants.enum import (
+    Environment,
+    EventType,
+    NotificationChannel,
+    NotificationStatus,
+    Priority,
+    Severity,
+    TicketSource,
+    TicketStatus,
+)
+
+
+# ── Attachment ────────────────────────────────────────────────────────────────
+class AttachmentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    attachment_id: int
+    ticket_id: int
+    file_name: str
+    file_url: str
+    uploaded_by_user_id: str        # FIX: int → str (UUID)
+    uploaded_at: datetime
+
+
+# ── Ticket Event ──────────────────────────────────────────────────────────────
+class TicketEventResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    event_id: int
+    ticket_id: int
+    triggered_by_user_id: Optional[str] = None   # FIX: int → str (UUID)
+    event_type: EventType
+    field_name: Optional[str] = None
+    old_value: Optional[str] = None
+    new_value: Optional[str] = None
+    comment_id: Optional[int] = None
+    created_at: datetime
+
+
+# ── Comment ───────────────────────────────────────────────────────────────────
+class CommentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    comment_id: int
+    ticket_id: int
+    author_id: str                   # FIX: was user_id: int — column is author_id: str
+    author_role: str
+    body: str                        # FIX: was message — column is body
+    is_internal: bool
+    attachments: Optional[list] = None
+    created_at: datetime
+
+
+# ── Create ────────────────────────────────────────────────────────────────────
+class TicketCreateRequest(BaseModel):
+    title: str = Field(..., min_length=3, max_length=500)
+    description: str = Field(..., min_length=10)
+    product: str = Field(..., min_length=1, max_length=100)
+    environment: Environment
+    source: TicketSource = TicketSource.UI
+    area_of_concern: Optional[str] = Field(default=None, max_length=255)
+    attachments: list[str] = Field(default_factory=list)
+
+
+# ── Status transition ─────────────────────────────────────────────────────────
+class TicketStatusUpdateRequest(BaseModel):
+    new_status: TicketStatus
+    comment: Optional[str] = Field(default=None, max_length=2000)
+
+
+# ── Assign ────────────────────────────────────────────────────────────────────
+class TicketAssignRequest(BaseModel):
+    assignee_id: str = Field(...)    # FIX: int → str (UUID)
+
+
+# ── Brief response (list view) ────────────────────────────────────────────────
+class TicketBriefResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    ticket_id: int
+    ticket_number: str
+    title: str
+    status: TicketStatus
+    severity: Severity
+    priority: Priority
+    environment: Environment
+    product: str
+    area_of_concern: Optional[str] = None
+    source: TicketSource
+    customer_id: str                 # FIX: int → str (UUID)
+    assignee_id: Optional[str] = None   # FIX: int → str (UUID)
+    sla_id: Optional[int] = None
+    customer_tier_id: Optional[int] = None
+    response_due_at: Optional[datetime] = None
+    resolution_due_at: Optional[datetime] = None
+    is_breached: bool = False
+    is_escalated: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+
+# ── Detail response (single ticket) ──────────────────────────────────────────
+class TicketDetailResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    ticket_id: int
+    ticket_number: str
+    title: str
+    description: str
+    product: str
+    environment: Environment
+    area_of_concern: Optional[str] = None
+    source: TicketSource
+    severity: Severity
+    priority: Priority
+    status: TicketStatus
+    customer_id: str                 # FIX: int → str (UUID)
+    assignee_id: Optional[str] = None   # FIX: int → str (UUID)
+    sla_id: Optional[int] = None
+    customer_tier_id: Optional[int] = None
+    response_due_at: Optional[datetime] = None
+    resolution_due_at: Optional[datetime] = None
+    is_breached: bool = False
+    is_escalated: bool = False
+    hold_started_at: Optional[datetime] = None
+    total_hold_minutes: int = 0
+    resolved_at: Optional[datetime] = None
+    closed_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+
+    # Eagerly loaded relations
+    events: list[TicketEventResponse] = Field(default_factory=list)
+    comments: list[CommentResponse] = Field(default_factory=list)
+    attachments: list[AttachmentResponse] = Field(default_factory=list)
+
+
+# ── Filters (used by list endpoint) ───────────────────────────────────────────
+class TicketListFilters(BaseModel):
+    status: Optional[TicketStatus] = None
+    severity: Optional[Severity] = None
+    priority: Optional[Priority] = None
+    is_breached: Optional[bool] = None
+    is_escalated: Optional[bool] = None
+    customer_id: Optional[str] = None   # FIX: int → str (UUID)
+    assignee_id: Optional[str] = None   # FIX: int → str (UUID)
+    page: int = 1
+    page_size: int = 20

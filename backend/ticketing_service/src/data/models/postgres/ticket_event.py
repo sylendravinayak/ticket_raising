@@ -1,30 +1,48 @@
-import uuid
 from datetime import datetime
-from typing import Optional
-from sqlalchemy import String, DateTime, ForeignKey, Enum as SAEnum, JSON
+from typing import TYPE_CHECKING, Optional
+
+from sqlalchemy import BigInteger, DateTime, Enum as SAEnum, ForeignKey, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
-from src.data.models.postgres.base import Base
+
 from src.constants.enum import EventType
+from src.data.models.postgres.base import Base
+
+if TYPE_CHECKING:
+    from src.data.models.postgres.ticket import Ticket
+    from src.data.models.postgres.ticket_comment import TicketComment
 
 
 class TicketEvent(Base):
+    """
+    Immutable audit trail of every state change, assignment, comment, etc.
+    triggered_by_user_id  →  plain Integer (Auth Service user_id, no FK).
+    """
+
     __tablename__ = "ticket_events"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-    ticket_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True),
-        ForeignKey("tickets.id", ondelete="CASCADE"),
-        nullable=False,
-    )
-    event_type: Mapped[EventType] = mapped_column(SAEnum(EventType), nullable=False)
-    metadata_: Mapped[Optional[dict]] = mapped_column("metadata", JSON)
-    actor_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
-    actor_role: Mapped[Optional[str]] = mapped_column(String(50))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.utcnow, nullable=False
+    event_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    ticket_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False
     )
 
+    # Cross-service user reference — plain Integer, no FK
+    triggered_by_user_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+
+    event_type: Mapped[EventType] = mapped_column(
+        SAEnum(EventType, name="event_type_enum", create_type=True), nullable=False
+    )
+    field_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    old_value: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    new_value: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    comment_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("ticket_comments.comment_id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # Relationships (intra-service)
     ticket: Mapped["Ticket"] = relationship("Ticket", back_populates="events")
+    comment: Mapped[Optional["TicketComment"]] = relationship(
+        "TicketComment", back_populates="events"
+    )

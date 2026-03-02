@@ -1,30 +1,42 @@
-
 from functools import lru_cache
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 class Settings(BaseSettings):
-
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="allow",
-
     )
 
+    # App
     log_level: str = Field(default="INFO")
-    database_url: str
+    environment: str = Field(default="development")
+
+    # Database
+    DATABASE_URL: str
+
+    # JWT — used to decode tokens issued by Auth Service
+    secret_key: str = Field(default="change-me-at-least-32-chars-long-here")
+    algorithm: str = Field(default="HS256")
+    # Auth Service URL — for cross-service user lookups
+    auth_service_url: str = Field(default="http://localhost:8001")
+
+    # SLA defaults (minutes)
+    DEFAULT_RESPONSE_TIME_MINUTES: int = 480       # 8 h
+    DEFAULT_RESOLUTION_TIME_MINUTES: int = 2880    # 48 h
+    DEFAULT_ESCALATION_AFTER_MINUTES: int = 120    # 2 
+
+    # Auto-close resolved tickets after N hours
+    auto_close_after_hours: int = Field(default=72)
+
+    # Optional: Anthropic LLM for classification
+    anthropic_api_key: str = Field(default="")
+
 
 @lru_cache
 def get_settings() -> Settings:
-    """Cached settings instance — loaded once, reused everywhere."""
     return Settings()
-
-
-
-
-
-
-

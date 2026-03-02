@@ -1,25 +1,24 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from src.core.exceptions.base import ApplicationError
+from src.core.exceptions.base import TicketingGenieBaseException
 
 
 def register_exception_handlers(app: FastAPI) -> None:
     """Register global exception handlers for the application."""
 
-    @app.exception_handler(ApplicationError)
+    @app.exception_handler(TicketingGenieBaseException)
     async def application_error_handler(
         request: Request,
-        exc: ApplicationError,
+        exc: TicketingGenieBaseException,
     ) -> JSONResponse:
         """Handle all custom application errors."""
         return JSONResponse(
             status_code=exc.status_code,
             content={
-                "detail": exc.detail,
-                "errors": exc.details,
+                "detail": exc.detail
             },
-            headers=exc.headers or {},
+            
         )
 
     @app.exception_handler(Exception)

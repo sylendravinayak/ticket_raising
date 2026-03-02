@@ -1,14 +1,17 @@
 import uuid
 from datetime import UTC, datetime, timedelta
+
+from jose import ExpiredSignatureError, JWTError
+from passlib.context import CryptContext
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from passlib.context import CryptContext
+
 from src.config.settings import get_settings
 from src.core.exceptions.auth import (
     AuthenticationError,
     InvalidTokenTypeError,
+    TokenExpiredError,
     TokenRevokedError,
-    TokenExpiredError
 )
 from src.data.models.postgres.role import Role
 from src.data.models.postgres.token import RefreshToken
@@ -16,12 +19,7 @@ from src.data.models.postgres.user import User
 from src.data.repositories.token_repository import TokenRepository
 from src.data.repositories.user_repository import UserRepository
 from src.observability.logging.logger import get_logger
-from src.schemas.auth import (
-    LoginRequest,
-    SignupRequest,
-    TokenResponse,
-    UserResponse,
-)
+from src.schemas.auth import LoginRequest, SignupRequest, TokenResponse, UserResponse
 from src.utils.security import (
     create_access_token,
     create_refresh_token,
@@ -29,41 +27,34 @@ from src.utils.security import (
     hash_password,
     verify_password,
 )
-from jose import JWTError, ExpiredSignatureError
-logger = get_logger(__name__)
 
+logger = get_logger(__name__)
 settings = get_settings()
 
-
 pwd = CryptContext(schemes=["argon2"])
-_DUMMY_HASH=pwd.hash("dummy_password")
+_DUMMY_HASH = pwd.hash("dummy_password")
+
 
 class AuthService:
-    """
-    Handles all authentication workflows.
-    """
-
     def __init__(self, session: AsyncSession) -> None:
+        self._session = session
         self._user_repo = UserRepository(session)
         self._token_repo = TokenRepository(session)
 
-
+    # ── SIGNUP ──────────────────────────────────────────────────────────────
     async def signup(self, data: SignupRequest) -> UserResponse:
-        """
-        Register a new user account.
-        """
         if await self._user_repo.email_exists(data.email):
-            logger.warning("Signup attempt with existing email: %s", data.email)
+            logger.warning("signup_duplicate_email", email=data.email)
             raise AuthenticationError("Unable to create account")
 
-        result = await self._user_repo.session.execute(
+        result = await self._session.execute(
             select(Role).where(Role.name == data.role)
         )
         role_record = result.scalar_one_or_none()
         if role_record is None:
             role_record = Role(name=data.role)
-            self._user_repo.session.add(role_record)
-            await self._user_repo.session.flush()
+            self._session.add(role_record)
+            await self._session.flush()
 
         user = User(
             email=data.email.lower().strip(),
@@ -71,163 +62,120 @@ class AuthService:
             role_id=role_record.id,
         )
         saved = await self._user_repo.save(user)
-        logger.info("signup successfull", email=data.email, user_id=str(saved.id))
+        logger.info("signup_success", email=data.email, user_id=str(saved.id))
         return UserResponse.model_validate(saved)
 
-
-
+    # ── LOGIN ────────────────────────────────────────────────────────────────
     async def login(self, data: LoginRequest) -> TokenResponse:
-        """
-        Authenticate user and issue a new token pair.
-        """
         user = await self._user_repo.get_by_email(data.email.lower().strip())
-
 
         password_valid = verify_password(
             data.password,
             user.hashed_password if user else _DUMMY_HASH,
         )
-
         if not user or not password_valid or not user.is_active:
-            logger.warning("Failed login attempt", email=data.email)
+            logger.warning("login_failed", email=data.email)
             raise AuthenticationError()
 
         await self._token_repo.cleanup_expired(user.id)
-
         tokens = await self._issue_token_pair(user)
-
-        logger.info("Login successful", email=data.email, user_id=str(user.id))
+        logger.info("login_success", email=data.email, user_id=str(user.id))
         return tokens
 
-
+    # ── REFRESH ──────────────────────────────────────────────────────────────
     async def refresh(self, refresh_token: str) -> TokenResponse:
-        """
-        Rotate refresh token and issue new token pair.
-        """
-
+        # 1. Decode
         try:
             payload = decode_token(refresh_token)
-        except Exception as err:
-            logger.warning("Failed to decode refresh token", error=str(err))
+        except ExpiredSignatureError:
+            raise TokenExpiredError()
+        except JWTError as err:
             raise AuthenticationError("Invalid token") from err
 
+        # 2. Validate token type
         if payload.get("token_type") != "refresh":
-            logger.warning(
-                "Invalid token type for refresh",
-                 token_type=payload.get("token_type")
-                 )
             raise InvalidTokenTypeError()
 
+        jti: str = payload["jti"]
+        user_id: str = payload["sub"]
 
-        jti: str = payload.get("jti", "")
+        # 3. Look up stored token
+        stored = await self._token_repo.get_by_jti(jti)
+        if stored is None:
+            raise AuthenticationError("Token not found")
 
-        record = await self._token_repo.get_by_jti(jti)
-
-        if record is None:
-            logger.warning("Refresh token not found in database", jti=jti)
-            raise AuthenticationError("Invalid token")
-
-        if record.revoked:
-
-            await self._token_repo.revoke_all_for_user(record.user_id)
+        # 4. Reuse detection — if already revoked, revoke ALL tokens for user
+        if stored.revoked:
             logger.warning(
-                "Refresh token reuse detected - all tokens revoked for user",
-                  user_id=str(record.user_id), jti=jti
-                  )
+                "refresh_token_reuse_detected",
+                jti=jti,
+                user_id=user_id,
+            )
+            await self._token_repo.revoke_all_for_user(stored.user_id)
             raise TokenRevokedError()
 
-        if record.expires_at <= datetime.now(UTC):
-            logger.warning(
-                "Refresh token expired",
-                jti=jti,
-                expires_at=record.expires_at.isoformat()
-                )
-            raise AuthenticationError("Token expired")
+        # 5. Revoke old token (rotation)
+        await self._token_repo.revoke(stored)
 
-        await self._token_repo.revoke(record)
-
-        user = await self._user_repo.get_by_id(record.user_id)
+        # 6. Load user and issue new pair
+        user = await self._user_repo.get_by_id(stored.user_id)
         if not user or not user.is_active:
-            logger.warning(
-            "User not found or inactive during token refresh",
-            user_id=str(record.user_id)
-            )
             raise AuthenticationError()
 
         tokens = await self._issue_token_pair(user)
-
-
-
+        logger.info("token_refreshed", user_id=user_id)
         return tokens
-
 
     async def logout(self, refresh_token: str) -> None:
         try:
             payload = decode_token(refresh_token)
-
-        except ExpiredSignatureError as err:
-            raise TokenExpiredError() from err
-
-        except JWTError as err:
-            raise AuthenticationError("Invalid token") from err
-
-        if payload.get("token_type") != "refresh":
-            raise InvalidTokenTypeError()
+        except Exception:
+            return
 
         jti = payload.get("jti")
         if not jti:
-            raise AuthenticationError("Invalid token payload")
+            return
 
-        record = await self._token_repo.get_by_jti(jti)
+        stored = await self._token_repo.get_by_jti(jti)
+        if stored and not stored.revoked:
+            await self._token_repo.revoke(stored)
+            logger.info("logout_success", jti=jti)
 
-        if not record:
-            raise AuthenticationError("Invalid token")
+    # ── INTERNAL ─────────────────────────────────────────────────────────────
+    async def _issue_token_pair(self, user: User) -> TokenResponse:
+        jti = str(uuid.uuid4())
+        role_name = user.role.name.value if hasattr(user.role.name, "value") else str(user.role.name)
 
-        if record.revoked:
-            raise TokenRevokedError()
-
-        await self._token_repo.revoke(record)
-
-    async def get_user_profile(self, user_id: str) -> UserResponse:
-        """
-        Fetch user profile by ID (from access token sub claim).
-
-        """
-        user = await self._user_repo.get_by_id(uuid.UUID(user_id))
-        if not user or not user.is_active:
-            logger.warning("User not found or inactive", user_id=user_id)
-            raise AuthenticationError()
-        logger.info("Fetched user profile", user_id=user_id)
-        return UserResponse.model_validate(user)
-
-
-    async def _issue_token_pair(
-        self, user: User
-    ) -> TokenResponse:
-        """
-        Create DB refresh token record + sign both JWTs.
-
-        """
-        refresh_jti = str(uuid.uuid4())
-        access_jti = str(uuid.uuid4())
-        expires_at = datetime.now(UTC) + timedelta(
-            days=settings.refresh_token_expire_days
+        access_token = create_access_token(
+            subject=str(user.id),
+            role=role_name,
+            jti=str(uuid.uuid4()),
+        )
+        refresh_token_str = create_refresh_token(
+            subject=str(user.id),
+            jti=jti,
         )
 
-
+        # Persist refresh token
+        expires_at = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
         refresh_record = RefreshToken(
             user_id=user.id,
-            jti=refresh_jti,
+            jti=jti,
             expires_at=expires_at,
+            revoked=False,
         )
-        await self._token_repo.save(refresh_record)
-
-        role_name = user.role.name.value if user.role else "user"
-        access_token = create_access_token(str(user.id), role_name, access_jti)
-        refresh_token = create_refresh_token(str(user.id), refresh_jti)
+        self._session.add(refresh_record)
+        await self._session.flush()
 
         return TokenResponse(
             access_token=access_token,
-            refresh_token=refresh_token,
+            refresh_token=refresh_token_str,
             expires_in=settings.access_token_expire_minutes * 60,
         )
+    
+    async def get_agents_by_lead(self, lead_id: str) -> list[UserResponse]:
+        """Get all agents associated with a specific lead."""
+        agents = await self._user_repo.get_agents_by_lead(lead_id)
+        return [UserResponse.model_validate(agent) for agent in agents]
+    
+    

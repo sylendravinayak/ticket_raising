@@ -81,5 +81,9 @@ class User(Base, UUIDMixin, TimestampMixin):
         Index("ix_users_email_active", "email", "is_active"),
     )
 
+    customer_tierid: Mapped[int] = mapped_column(
+        nullable=True,
+    )
+
     def __repr__(self) -> str:
-        return f"<User id={self.id} email={self.email}>"
+        return f"<User id={self.id} email={self.email} customer_tierid={self.customer_tierid}>"

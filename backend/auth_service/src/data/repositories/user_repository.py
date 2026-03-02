@@ -26,3 +26,10 @@ class UserRepository(BaseRepository[User]):
             select(User.id).where(User.email == email)
         )
         return result.scalar_one_or_none() is not None
+    
+    async def get_agents_by_lead(self, lead_id: str) -> list[User]:
+        """Get all agents associated with a specific lead."""
+        result = await self.session.execute(
+            select(User).where(User.lead_id == lead_id)
+        )
+        return result.scalars().all()
