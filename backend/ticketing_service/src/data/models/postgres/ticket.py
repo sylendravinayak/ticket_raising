@@ -7,7 +7,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-# ── Only import what actually exists in enum.py ────────────────────────────
 from src.constants.enum import (
     Environment, Priority, Severity, TicketSource, TicketStatus,
 )
@@ -55,22 +54,28 @@ class Ticket(Base):
 
     customer_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     assignee_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True)
-
-    sla_id: Mapped[Optional[int]] = mapped_column(
-        Integer, ForeignKey("slas.sla_id", ondelete="SET NULL"), nullable=True
-    )
+    
+    
     customer_tier_id: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("customer_tiers.tier_id", ondelete="SET NULL"), nullable=True
     )
+    response_sla_deadline_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    resolution_sla_deadline_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
-    response_due_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    resolution_due_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    is_breached: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    is_escalated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    hold_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    total_hold_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    response_sla_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    response_sla_breached_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    response_sla_completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    first_response_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    resolution_sla_started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolution_sla_paused_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolution_sla_total_pause_duration: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    resolution_sla_completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolution_sla_breached_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    escalation_level: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    auto_closed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -78,7 +83,6 @@ class Ticket(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
-    sla: Mapped[Optional["SLA"]] = relationship("SLA", back_populates="tickets")
     attachments: Mapped[list["TicketAttachment"]] = relationship(
         "TicketAttachment", back_populates="ticket", cascade="all, delete-orphan"
     )

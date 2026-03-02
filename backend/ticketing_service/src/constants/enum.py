@@ -10,6 +10,7 @@ class UserRole(str, enum.Enum):
 class TicketStatus(str, enum.Enum):
     NEW = "NEW"
     ACKNOWLEDGED = "ACKNOWLEDGED"
+    OPEN         = "OPEN"          
     IN_PROGRESS = "IN_PROGRESS"
     ON_HOLD = "ON_HOLD"
     RESOLVED = "RESOLVED"

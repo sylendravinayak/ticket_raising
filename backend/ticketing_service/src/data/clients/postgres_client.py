@@ -20,6 +20,7 @@ AsyncSessionLocal: async_sessionmaker[AsyncSession] = async_sessionmaker(
     autoflush=False,
 )
 
+AsyncSessionFactory = AsyncSessionLocal
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """
     Dependency that provides a DB session per request.

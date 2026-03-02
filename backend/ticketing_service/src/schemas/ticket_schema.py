@@ -17,6 +17,7 @@ from src.constants.enum import (
     TicketSource,
     TicketStatus,
 )
+from src.data.models.postgres.ticket_event import TicketEvent
 
 
 # ── Attachment ────────────────────────────────────────────────────────────────
@@ -155,3 +156,34 @@ class TicketListFilters(BaseModel):
     assignee_id: Optional[str] = None   # FIX: int → str (UUID)
     page: int = 1
     page_size: int = 20
+
+class TicketTimelineResponse(BaseModel):
+    """
+    Projects a STATUS_CHANGED TicketEvent as a timeline entry.
+    from_status maps to TicketEvent.from_status
+    to_status   maps to TicketEvent.new_value
+    changed_by  maps to TicketEvent.triggered_by_user_id (or "SYSTEM" if None)
+    changed_at  maps to TicketEvent.created_at
+    reason      maps to TicketEvent.reason
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    event_id: int
+    ticket_id: int
+    from_status: Optional[str] = None      # None on creation event
+    to_status: str                          # maps from new_value
+    changed_by: Optional[str] = None       # None = SYSTEM triggered
+    changed_at: datetime                    # maps from created_at
+    reason: Optional[str] = None
+
+    @classmethod
+    def from_event(cls, event: "TicketEvent") -> "TicketTimelineResponse":
+        return cls(
+            event_id=event.event_id,
+            ticket_id=event.ticket_id,
+            from_status=event.from_status,
+            to_status=event.new_value or "",
+            changed_by=event.triggered_by_user_id or "SYSTEM",
+            changed_at=event.created_at,
+            reason=event.reason,
+        )

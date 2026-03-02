@@ -24,7 +24,14 @@ class Settings(BaseSettings):
     algorithm: str = Field(default="HS256")
     # Auth Service URL — for cross-service user lookups
     auth_service_url: str = Field(default="http://localhost:8001")
+    
+    # SendGrid
+    SENDGRID_API_KEY: str = Field(default="")
+    FROM_EMAIL: str = Field(default="noreply@ticketinggenie.com")
 
+    # Celery
+    CELERY_BROKER_URL: str = Field(default="redis://localhost:6379/0")
+    CELERY_RESULT_BACKEND: str = Field(default="redis://localhost:6379/1")
     # SLA defaults (minutes)
     DEFAULT_RESPONSE_TIME_MINUTES: int = 480       # 8 h
     DEFAULT_RESOLUTION_TIME_MINUTES: int = 2880    # 48 h
@@ -35,6 +42,13 @@ class Settings(BaseSettings):
 
     # Optional: Anthropic LLM for classification
     anthropic_api_key: str = Field(default="")
+
+    CELERY_BROKER_URL: str = Field(default="redis://localhost:6379/0")
+    CELERY_RESULT_BACKEND: str = Field(default="redis://localhost:6379/0")
+
+    # LLM keys
+    anthropic_api_key: str = Field(default="")
+    groq_api_key: str = Field(default="")   
 
 
 @lru_cache

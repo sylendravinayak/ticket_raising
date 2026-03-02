@@ -41,7 +41,6 @@ class SLA(Base):
     policies: Mapped[list["SLAPolicy"]] = relationship(
         "SLAPolicy", back_populates="sla", cascade="all, delete-orphan"
     )
-    tickets: Mapped[list["Ticket"]] = relationship("Ticket", back_populates="sla")
 
 
 class SLARule(Base):

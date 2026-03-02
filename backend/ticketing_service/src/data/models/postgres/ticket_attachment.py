@@ -20,7 +20,6 @@ class TicketAttachment(Base):
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     file_url: Mapped[str] = mapped_column(String(1024), nullable=False)
 
-    # FIX: UUID string from auth service — VARCHAR(36) not INTEGER
     uploaded_by_user_id: Mapped[str] = mapped_column(String(36), nullable=False)
 
     uploaded_at: Mapped[datetime] = mapped_column(

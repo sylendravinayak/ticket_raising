@@ -11,14 +11,16 @@ GET    /tickets               all tickets (team_lead / admin only)
 
 from typing import Optional
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 
 from src.api.rest.dependencies import (
     CurrentUserID,
     CurrentUserRole,
     TicketServiceDep,
 )
-from src.constants.enum import Priority, Severity, TicketStatus
+from src.constants.enum import Priority, Severity, TicketStatus, UserRole
+from src.control.assignment_agent.workflow import run_auto_assign
+from src.control.assignment_agent.workflow import run_auto_assign
 from src.schemas.common_schema import PaginatedResponse
 from src.schemas.ticket_schema import (
     TicketAssignRequest,
@@ -197,3 +199,30 @@ async def assign_ticket(
 
 
 
+@router.post(
+    "/{ticket_id}/auto-assign",
+    summary="AI-powered automatic ticket assignment",
+    status_code=status.HTTP_200_OK,
+)
+async def auto_assign_ticket(
+    ticket_id: int,
+    ticket_title: str,          # pass via query param or extend with a request body
+    ticket_priority: str,
+    user_id: CurrentUserID,
+    user_role: CurrentUserRole,
+):
+    role = UserRole(user_role)
+    if role not in (UserRole.LEAD, UserRole.ADMIN):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only team_lead or admin can trigger auto-assignment.",
+        )
+
+    result = await run_auto_assign(
+        ticket_id=ticket_id,
+        ticket_title=ticket_title,
+        ticket_priority=ticket_priority,
+        assigner_id=user_id,
+        assigner_role=user_role,
+    )
+    return result
