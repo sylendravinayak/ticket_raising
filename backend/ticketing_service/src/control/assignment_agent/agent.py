@@ -10,7 +10,6 @@ from langgraph.prebuilt import create_react_agent
 from src.config.settings import get_settings
 from src.data.clients.postgres_client import AsyncSessionFactory
 from src.data.repositories.agent_repository import AgentRepository
-from src.data.repositories.ticket_repository import TicketRepository
 from src.core.services.ticket_service import TicketService
 from src.schemas.ticket_schema import TicketAssignRequest
 from src.control.assignment_agent.tools import (

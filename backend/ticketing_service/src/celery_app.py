@@ -28,12 +28,12 @@ celery_app.conf.beat_schedule = {
         "task": "tasks.detect_sla_breaches",
         "schedule": crontab(minute="*/5"),
     },
-    "detect-escalations": {
-        "task": "tasks.detect_escalations",
-        "schedule": crontab(minute="*/5"),
-    },
     "auto-close-resolved-tickets": {
         "task": "tasks.auto_close_resolved_tickets",
         "schedule": crontab(minute="0"),
+    },
+    "check-lead-timeout": {
+        "task": "tasks.check_lead_timeout",
+        "schedule": crontab(minute="*/2"),  
     },
 }

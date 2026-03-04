@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { Clock, AlertTriangle, ArrowUpRight } from 'lucide-react';
+import { Clock, AlertTriangle, ArrowUpRight, Inbox } from 'lucide-react';
 import type { TicketBrief } from '@/types';
 import TicketStatusBadge from './TicketStatusBadge';
 import SeverityPriorityBadge from './SeverityPriorityBadge';
@@ -17,9 +17,15 @@ export default function TicketCard({ ticket }: Props) {
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="text-xs font-mono text-gray-500">{ticket.ticket_number}</span>
             <TicketStatusBadge status={ticket.status} />
+            {ticket.queue_type === 'OPEN' && (
+              <span className="badge bg-indigo-100 text-indigo-700">
+                <Inbox size={10} className="mr-0.5" />
+                Open Queue
+              </span>
+            )}
             {ticket.is_breached && (
               <span className="badge bg-red-600 text-white">
                 <AlertTriangle size={12} className="mr-1" />

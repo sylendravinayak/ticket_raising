@@ -13,6 +13,8 @@ from src.constants.enum import (
     NotificationChannel,
     NotificationStatus,
     Priority,
+    QueueType,
+    RoutingStatus,
     Severity,
     TicketSource,
     TicketStatus,
@@ -75,13 +77,13 @@ class CommentCreateRequest(BaseModel):
     """
     body: str = Field(..., min_length=1, max_length=5000)
     is_internal: bool = False
-
-    # Exactly one of these can be True (or both False for a plain comment)
     triggers_hold: bool = False
     triggers_resume: bool = False
+    ticket_id: int =Field(...)
 
 
-# ── Create ─────────────────────────────────��──────────────────────────────────
+
+# ── Create ───────────────────────────────────────────────────────────────────
 class TicketCreateRequest(BaseModel):
     title: str = Field(..., min_length=3, max_length=500)
     description: str = Field(..., min_length=10)
@@ -119,6 +121,9 @@ class TicketBriefResponse(BaseModel):
     source: TicketSource
     customer_id: str
     assignee_id: Optional[str] = None
+    assigned_agent_id: Optional[int] = None
+    queue_type: str = QueueType.DIRECT.value
+    routing_status: str = RoutingStatus.SUCCESS.value
     sla_id: Optional[int] = None
     customer_tier_id: Optional[int] = None
     response_due_at: Optional[datetime] = None
@@ -146,6 +151,9 @@ class TicketDetailResponse(BaseModel):
     status: TicketStatus
     customer_id: str
     assignee_id: Optional[str] = None
+    assigned_agent_id: Optional[int] = None
+    queue_type: str = QueueType.DIRECT.value
+    routing_status: str = RoutingStatus.SUCCESS.value
     sla_id: Optional[int] = None
     customer_tier_id: Optional[int] = None
     response_due_at: Optional[datetime] = None

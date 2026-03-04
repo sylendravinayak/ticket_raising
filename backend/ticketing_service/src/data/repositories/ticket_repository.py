@@ -1,5 +1,8 @@
 """
-Ticket repository — all DB access via SQLAlchemy ORM, no raw SQL.
+Ticket repository — manages the ``tickets`` table ONLY.
+
+This repository must NOT query or mutate any other table.
+Cross-table orchestration belongs in the service layer.
 """
 
 from datetime import datetime
@@ -9,13 +12,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from src.constants.enum import TicketStatus
-from src.data.models.postgres.escalation import EscalationHistory
-from src.data.models.postgres.notification_log import NotificationLog
+from src.constants.enum import QueueType, RoutingStatus, TicketStatus
 from src.data.models.postgres.ticket import Ticket
-from src.data.models.postgres.ticket_attachment import TicketAttachment
-from src.data.models.postgres.ticket_comment import TicketComment
-from src.data.models.postgres.ticket_event import TicketEvent
 from src.schemas.ticket_schema import TicketListFilters
 
 
@@ -109,6 +107,83 @@ class TicketRepository:
         )
         return list(result.scalars().all())
 
+    async def get_lead_timed_out_tickets(self, cutoff: datetime) -> list[Ticket]:
+        """
+        Tickets that were assigned to a lead after AI failure but the lead
+        hasn't re-assigned within the timeout window.  Condition:
+          - routing_status = AI_FAILED
+          - queue_type = DIRECT  (still assigned, not yet open)
+          - lead_assigned_at < cutoff
+          - assignee_id IS NOT NULL (still assigned to lead)
+        """
+        result = await self.db.execute(
+            select(Ticket).where(
+                Ticket.routing_status == RoutingStatus.AI_FAILED.value,
+                Ticket.queue_type == QueueType.DIRECT.value,
+                Ticket.lead_assigned_at.isnot(None),
+                Ticket.lead_assigned_at < cutoff,
+                Ticket.assignee_id.isnot(None),
+                Ticket.status.in_([
+                    TicketStatus.ACKNOWLEDGED,
+                    TicketStatus.OPEN,
+                    TicketStatus.NEW,
+                ]),
+            )
+        )
+        return list(result.scalars().all())
+
+    async def get_response_sla_candidates(self, now: datetime) -> list[Ticket]:
+        """
+        Tickets whose response SLA *may* be breached right now.
+        The actual breach check is done by SLAService.check_response_breach().
+        """
+        result = await self.db.execute(
+            select(Ticket).where(
+                Ticket.response_sla_started_at.isnot(None),
+                Ticket.response_sla_deadline_minutes.isnot(None),
+                Ticket.response_sla_completed_at.is_(None),
+                Ticket.response_sla_breached_at.is_(None),
+                Ticket.status.in_([
+                    TicketStatus.NEW,
+                    TicketStatus.ACKNOWLEDGED,
+                    TicketStatus.OPEN,
+                ]),
+            )
+        )
+        return list(result.scalars().all())
+
+    async def get_resolution_sla_candidates(self, now: datetime) -> list[Ticket]:
+        """
+        Tickets whose resolution SLA *may* be breached right now.
+        The actual breach check is done by SLAService.check_resolution_breach().
+        """
+        result = await self.db.execute(
+            select(Ticket).where(
+                Ticket.resolution_sla_started_at.isnot(None),
+                Ticket.resolution_sla_deadline_minutes.isnot(None),
+                Ticket.resolution_sla_completed_at.is_(None),
+                Ticket.resolution_sla_breached_at.is_(None),
+                Ticket.resolution_sla_paused_at.is_(None),
+                Ticket.status == TicketStatus.IN_PROGRESS,
+            )
+        )
+        return list(result.scalars().all())
+
+    async def get_auto_closeable(self, cutoff: datetime) -> list[Ticket]:
+        """
+        Tickets in RESOLVED status whose resolution was completed before *cutoff*
+        and have not yet been auto-closed.
+        """
+        result = await self.db.execute(
+            select(Ticket).where(
+                Ticket.status == TicketStatus.RESOLVED,
+                Ticket.auto_closed == False,  # noqa: E712
+                Ticket.resolution_sla_completed_at.isnot(None),
+                Ticket.resolution_sla_completed_at <= cutoff,
+            )
+        )
+        return list(result.scalars().all())
+
     # ── WRITE ────────────────────────────────────────────────────────────────
 
     async def create(self, ticket: Ticket) -> Ticket:
@@ -123,26 +198,6 @@ class TicketRepository:
         self.db.add(ticket)
         await self.db.flush()
         return await self.get_by_id(ticket.ticket_id, eager=True)
-
-    async def add_event(self, event: TicketEvent) -> None:
-        self.db.add(event)
-        await self.db.flush()
-
-    async def add_attachment(self, attachment: TicketAttachment) -> None:
-        self.db.add(attachment)
-        await self.db.flush()
-
-    async def add_comment(self, comment: TicketComment) -> None:
-        self.db.add(comment)
-        await self.db.flush()
-
-    async def add_escalation(self, escalation: EscalationHistory) -> None:
-        self.db.add(escalation)
-        await self.db.flush()
-
-    async def add_notification_log(self, log: NotificationLog) -> None:
-        self.db.add(log)
-        await self.db.flush()
 
     # ── INTERNAL ─────────────────────────────────────────────────────────────
 

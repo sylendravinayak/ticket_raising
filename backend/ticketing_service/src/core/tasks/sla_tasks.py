@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -12,14 +11,15 @@ from src.data.clients.postgres_client import AsyncSessionFactory
 from src.data.models.postgres.notification_log import NotificationLog
 from src.data.models.postgres.ticket_event import TicketEvent
 from src.data.repositories.agent_repository import AgentRepository
+from src.data.repositories.notification_log_repository import NotificationLogRepository
 from src.data.repositories.sla_repository import SLARepository
+from src.data.repositories.sla_rule_repository import SLARuleRepository
+from src.data.repositories.ticket_event_repository import TicketEventRepository
 from src.data.repositories.ticket_repository import TicketRepository
 
+from src.core.tasks._loop import run_async
+
 logger = logging.getLogger(__name__)
-
-
-def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
 
 
 def _make_sla_event(ticket, reason: str) -> TicketEvent:
@@ -30,24 +30,21 @@ def _make_sla_event(ticket, reason: str) -> TicketEvent:
     """
     return TicketEvent(
         ticket_id=ticket.ticket_id,
-        triggered_by_user_id=None,          # None = SYSTEM
+        triggered_by_user_id=None,        
         event_type=EventType.SLA_BREACHED,
         field_name="sla",
-        from_status=ticket.status.value,    # status unchanged, recorded for timeline
+        from_status=ticket.status.value,   
         old_value=ticket.status.value,
         new_value=ticket.status.value,
         reason=reason,
     )
 
 
-# ══════════════════════════════════════════════════════════════
-# TASK 1 — SLA BREACH DETECTION (every 5 minutes)
-# ══════════════════════════════════════════════════════════════
 
 @celery_app.task(name="tasks.detect_sla_breaches", bind=True, max_retries=3)
 def detect_sla_breaches(self):
     try:
-        _run(_detect_sla_breaches_async())
+        run_async(_detect_sla_breaches_async())
     except Exception as exc:
         logger.exception("detect_sla_breaches failed: %s", exc)
         raise self.retry(exc=exc, countdown=30)
@@ -58,13 +55,14 @@ async def _detect_sla_breaches_async() -> None:
 
     async with AsyncSessionFactory() as db:
         repo = TicketRepository(db)
+        event_repo = TicketEventRepository(db)
+        notification_repo = NotificationLogRepository(db)
         agent_repo = AgentRepository(db)
-        sla_svc = SLAService(SLARepository(db))
+        sla_svc = SLAService(SLARepository(db), SLARuleRepository(db))
 
         leads = await agent_repo.get_available_leads()
         lead_ids = [a.user_id for a in leads]
 
-        # ── Response SLA breach ───────────────────────────────────────────────
         response_candidates = await repo.get_response_sla_candidates(now)
 
         for ticket in response_candidates:
@@ -76,7 +74,7 @@ async def _detect_sla_breaches_async() -> None:
                 await repo.save(ticket)
 
                 # Write breach event into ticket_events (IS the timeline row)
-                await repo.add_event(_make_sla_event(
+                await event_repo.add(_make_sla_event(
                     ticket,
                     reason=f"Response SLA breached — escalation level {ticket.escalation_level}",
                 ))
@@ -84,7 +82,7 @@ async def _detect_sla_breaches_async() -> None:
                 # Notify all team leads
                 for lead_id in lead_ids:
                     for ch in (NotificationChannel.EMAIL, NotificationChannel.IN_APP):
-                        await repo.add_notification_log(NotificationLog(
+                        await notification_repo.add(NotificationLog(
                             ticket_id=ticket.ticket_id,
                             recipient_user_id=lead_id,
                             channel=ch,
@@ -101,7 +99,6 @@ async def _detect_sla_breaches_async() -> None:
                 await db.rollback()
                 logger.error("response_breach failed ticket_id=%s: %s", ticket.ticket_id, exc)
 
-        # ── Resolution SLA breach ─────────────────────────────────────────────
         resolution_candidates = await repo.get_resolution_sla_candidates(now)
 
         for ticket in resolution_candidates:
@@ -113,7 +110,7 @@ async def _detect_sla_breaches_async() -> None:
                 await repo.save(ticket)
 
                 # Write breach event into ticket_events (IS the timeline row)
-                await repo.add_event(_make_sla_event(
+                await event_repo.add(_make_sla_event(
                     ticket,
                     reason=f"Resolution SLA breached — escalation level {ticket.escalation_level}",
                 ))
@@ -121,7 +118,7 @@ async def _detect_sla_breaches_async() -> None:
                 # Notify all team leads
                 for lead_id in lead_ids:
                     for ch in (NotificationChannel.EMAIL, NotificationChannel.IN_APP):
-                        await repo.add_notification_log(NotificationLog(
+                        await notification_repo.add(NotificationLog(
                             ticket_id=ticket.ticket_id,
                             recipient_user_id=lead_id,
                             channel=ch,
@@ -139,14 +136,11 @@ async def _detect_sla_breaches_async() -> None:
                 logger.error("resolution_breach failed ticket_id=%s: %s", ticket.ticket_id, exc)
 
 
-# ══════════════════════════════════════════════════════════════
-# TASK 2 — AUTO CLOSE (every hour)
-# ═════════��════════════════════════════════════════════════════
 
 @celery_app.task(name="tasks.auto_close_resolved_tickets", bind=True, max_retries=3)
 def auto_close_resolved_tickets(self):
     try:
-        _run(_auto_close_async())
+        run_async(_auto_close_async())
     except Exception as exc:
         logger.exception("auto_close_resolved_tickets failed: %s", exc)
         raise self.retry(exc=exc, countdown=60)
@@ -158,6 +152,8 @@ async def _auto_close_async() -> None:
 
     async with AsyncSessionFactory() as db:
         repo = TicketRepository(db)
+        event_repo = TicketEventRepository(db)
+        notification_repo = NotificationLogRepository(db)
 
         tickets = await repo.get_auto_closeable(cutoff)
         if not tickets:
@@ -172,7 +168,7 @@ async def _auto_close_async() -> None:
                 await repo.save(ticket)
 
                 # Write STATUS_CHANGED event — this IS the timeline row
-                await repo.add_event(TicketEvent(
+                await event_repo.add(TicketEvent(
                     ticket_id=ticket.ticket_id,
                     triggered_by_user_id=None,          # None = SYSTEM
                     event_type=EventType.STATUS_CHANGED,
@@ -184,7 +180,7 @@ async def _auto_close_async() -> None:
                 ))
 
                 # Notify customer
-                await repo.add_notification_log(NotificationLog(
+                await notification_repo.add(NotificationLog(
                     ticket_id=ticket.ticket_id,
                     recipient_user_id=ticket.customer_id,
                     channel=NotificationChannel.EMAIL,

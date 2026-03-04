@@ -38,6 +38,14 @@ class SLARuleNotFoundError(TicketingGenieBaseException):
     status_code = HTTPStatus.NOT_FOUND
     detail = "No matching SLA rule found."
 
+class SLANotFoundError(TicketingGenieBaseException):
+    status_code = HTTPStatus.NOT_FOUND
+    detail = "SLA not found."
+
+class KeywordRuleNotFoundError(TicketingGenieBaseException):
+    status_code = HTTPStatus.NOT_FOUND
+    detail = "Keyword rule not found."
+
 # ── Business rule violations ───────────────────────────────────────────────
 class InvalidStatusTransitionError(TicketingGenieBaseException):
     status_code = HTTPStatus.BAD_REQUEST

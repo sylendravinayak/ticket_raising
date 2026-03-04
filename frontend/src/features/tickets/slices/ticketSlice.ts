@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import { ticketService } from '../services/ticketService';
 import type {
+  CommentCreatePayload,
   PaginatedResponse,
   TicketBrief,
   TicketCreatePayload,
@@ -102,6 +103,20 @@ export const assignTicket = createAsyncThunk(
       return await ticketService.assignTicket(ticketId, payload);
     } catch (err: any) {
       return rejectWithValue(err.response?.data?.detail || 'Assignment failed');
+    }
+  },
+);
+
+export const addComment = createAsyncThunk(
+  'tickets/addComment',
+  async (
+    { ticketId, payload }: { ticketId: number; payload: CommentCreatePayload },
+    { rejectWithValue },
+  ) => {
+    try {
+      return await ticketService.addComment(ticketId, payload);
+    } catch (err: any) {
+      return rejectWithValue(err.response?.data?.detail || 'Failed to add comment');
     }
   },
 );
@@ -208,6 +223,15 @@ const ticketSlice = createSlice({
         }
       })
       .addCase(assignTicket.rejected, (state, { payload }) => {
+        state.error = payload as string;
+      });
+
+    // ADD COMMENT
+    builder
+      .addCase(addComment.fulfilled, (state, { payload }) => {
+        state.currentTicket = payload;
+      })
+      .addCase(addComment.rejected, (state, { payload }) => {
         state.error = payload as string;
       });
   },

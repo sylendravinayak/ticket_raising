@@ -50,7 +50,7 @@ async def get_available_agents(dummy: str = "") -> str:
     return json.dumps({
         "agents": [
             {
-                "user_id": a.user_id,
+                "user_id": str(a.user_id),
                 "display_name": a.display_name,
                 "max_open_tickets": a.max_open_tickets,
                 "customer_tier_id": a.customer_tier_id,
@@ -82,7 +82,6 @@ async def get_agent_resolution_history(agent_user_ids_json: str = "[]") -> str:
         agent_ids = json.loads(agent_user_ids_json)
         if not isinstance(agent_ids, list):
             agent_ids = []
-        # Ensure all IDs are strings
         agent_ids = [str(aid) for aid in agent_ids]
     except (json.JSONDecodeError, TypeError):
         agent_ids = []

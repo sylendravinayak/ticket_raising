@@ -6,6 +6,7 @@ from src.config.settings import get_settings
 from src.constants.enum import Priority, Severity
 from src.data.models.postgres.ticket import Ticket
 from src.data.repositories.sla_repository import SLARepository
+from src.data.repositories.sla_rule_repository import SLARuleRepository
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +22,9 @@ class SLAConfig:
 
 
 class SLAService:
-    def __init__(self, sla_repo: SLARepository) -> None:
+    def __init__(self, sla_repo: SLARepository, sla_rule_repo: SLARuleRepository) -> None:
         self._repo = sla_repo
+        self._rule_repo = sla_rule_repo
 
     # ── Rule lookup ───────────────────────────────────────────────────────────
 
@@ -40,7 +42,7 @@ class SLAService:
         if customer_tier_id is not None:
             sla = await self._repo.get_active_sla_for_tier(customer_tier_id)
             if sla:
-                rule = await self._repo.get_rule(sla.sla_id, severity, priority)
+                rule = await self._rule_repo.get_rule(sla.sla_id, severity, priority)
 
         if rule is None:
             logger.warning(
@@ -62,7 +64,6 @@ class SLAService:
             escalation_after_minutes=rule.escalation_after_minutes,
         )
 
-    # ── Response SLA ──────────────────────────────────────────────────────────
 
     def start_response_sla(self, ticket: Ticket, now: datetime) -> None:
         """Called at ticket creation (NEW)."""
@@ -137,7 +138,6 @@ class SLAService:
         ticket.resolution_sla_total_pause_duration = 0
         ticket.resolution_sla_completed_at = None
         ticket.resolution_sla_breached_at = None
-        # NOTE: response SLA is NOT touched on reopen
 
     def check_resolution_breach(self, ticket: Ticket, now: datetime) -> bool:
         """

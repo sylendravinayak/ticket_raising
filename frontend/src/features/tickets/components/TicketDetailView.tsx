@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '@/hooks/useAppDispatch';
 import {
   fetchTicketDetail,
   updateTicketStatus,
   assignTicket,
+  addComment,
   clearCurrentTicket,
 } from '../slices/ticketSlice';
 import { USER_ROLES, ALLOWED_TRANSITIONS, type TicketStatus } from '@/config/constants';
@@ -23,6 +24,8 @@ import {
   Clock,
   Shield,
   Paperclip,
+  Send,
+  MessageSquare,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -35,6 +38,11 @@ export default function TicketDetailView() {
 
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [showAssignModal, setShowAssignModal] = useState(false);
+
+  // Comment form state
+  const [commentBody, setCommentBody] = useState('');
+  const [isInternal, setIsInternal] = useState(false);
+  const [commentLoading, setCommentLoading] = useState(false);
 
   useEffect(() => {
     if (ticketId) dispatch(fetchTicketDetail(Number(ticketId)));
@@ -69,11 +77,23 @@ export default function TicketDetailView() {
 
   const isCustomer = user?.role === USER_ROLES.USER;
   const isAgent = user?.role === USER_ROLES.SUPPORT_AGENT;
-  const isLeadOrAdmin =
-    user?.role === USER_ROLES.ADMIN || user?.role === USER_ROLES.TEAM_LEAD;
+  const isLead = user?.role === USER_ROLES.TEAM_LEAD;
+  const isAdmin = user?.role === USER_ROLES.ADMIN;
+  const isLeadOrAdmin = isLead || isAdmin;
+
+  // Status transition: only non-customers can transition, and only if there are valid next states
   const canTransition = !isCustomer;
-  const canAssign = isLeadOrAdmin || isAgent;
   const hasNextStates = (ALLOWED_TRANSITIONS[ticket.status as TicketStatus] || []).length > 0;
+
+  // Assignment logic:
+  // - Agent: can ONLY self-assign, and ONLY if ticket is in OPEN queue (queue_type === 'OPEN')
+  // - Lead: can assign to agents ONLY if the ticket is currently assigned to them (assignee_id === lead's user id)
+  // - Admin: can assign to anyone (always shown)
+  const isOpenQueue = ticket.queue_type === 'OPEN';
+  const canAgentSelfAssign = isAgent && isOpenQueue && ticket.assignee_id !== user?.id;
+  const canLeadAssign = isLead && ticket.assignee_id === user?.id;
+  const canAdminAssign = isAdmin;
+  const showAssignButton = canAgentSelfAssign || canLeadAssign || canAdminAssign;
 
   const handleTransition = async (newStatus: string, comment?: string) => {
     const result = await dispatch(
@@ -105,6 +125,40 @@ export default function TicketDetailView() {
     }
   };
 
+  // Agent self-assign shortcut (no modal needed)
+  const handleSelfAssign = async () => {
+    if (!user) return;
+    await handleAssign(user.id);
+  };
+
+  const handleAddComment = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!commentBody.trim()) return;
+    setCommentLoading(true);
+    const result = await dispatch(
+      addComment({
+        ticketId: ticket.ticket_id,
+        payload: {
+          body: commentBody.trim(),
+          is_internal: isInternal,
+        },
+      }),
+    );
+    if (addComment.fulfilled.match(result)) {
+      toast.success('Comment added');
+      setCommentBody('');
+      setIsInternal(false);
+    } else {
+      toast.error((result.payload as string) || 'Failed to add comment');
+    }
+    setCommentLoading(false);
+  };
+
+  // Filter internal comments for customers
+  const visibleComments = isCustomer
+    ? ticket.comments.filter((c) => !c.is_internal)
+    : ticket.comments;
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Back */}
@@ -135,14 +189,19 @@ export default function TicketDetailView() {
             <h1 className="text-xl font-bold text-gray-900">{ticket.title}</h1>
           </div>
 
-          {/* Actions */}
+          {/* Actions — only relevant buttons per role */}
           <div className="flex gap-2 shrink-0">
             {canTransition && hasNextStates && (
               <button onClick={() => setShowStatusModal(true)} className="btn-primary text-sm">
                 <ArrowRightLeft size={16} /> Change Status
               </button>
             )}
-            {canAssign && (
+            {canAgentSelfAssign && (
+              <button onClick={handleSelfAssign} className="btn-secondary text-sm">
+                <UserCheck size={16} /> Self-Assign
+              </button>
+            )}
+            {(canLeadAssign || canAdminAssign) && (
               <button onClick={() => setShowAssignModal(true)} className="btn-secondary text-sm">
                 <UserCheck size={16} /> Assign
               </button>
@@ -161,9 +220,10 @@ export default function TicketDetailView() {
           {ticket.area_of_concern && (
             <InfoRow label="Area of Concern" value={ticket.area_of_concern} />
           )}
-          <InfoRow label="Customer ID" value={ticket.customer_id} mono />
+          <InfoRow label="Queue" value={ticket.queue_type} />
+          <InfoRow label="Routing" value={ticket.routing_status} />
           {ticket.assignee_id && (
-            <InfoRow label="Assignee ID" value={ticket.assignee_id} mono />
+            <InfoRow label="Assignee" value={ticket.assignee_id} mono />
           )}
         </div>
 
@@ -224,11 +284,14 @@ export default function TicketDetailView() {
       )}
 
       {/* Comments */}
-      {ticket.comments.length > 0 && (
-        <div className="card p-5">
-          <h3 className="font-semibold text-gray-900 mb-4">Comments</h3>
-          <div className="space-y-4">
-            {ticket.comments.map((c) => (
+      <div className="card p-5">
+        <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <MessageSquare size={16} /> Comments ({visibleComments.length})
+        </h3>
+
+        {visibleComments.length > 0 && (
+          <div className="space-y-4 mb-6">
+            {visibleComments.map((c) => (
               <div
                 key={c.comment_id}
                 className={`rounded-lg p-4 ${c.is_internal ? 'bg-yellow-50 border border-yellow-200' : 'bg-gray-50 border border-gray-200'}`}
@@ -250,8 +313,52 @@ export default function TicketDetailView() {
               </div>
             ))}
           </div>
-        </div>
-      )}
+        )}
+
+        {visibleComments.length === 0 && (
+          <p className="text-sm text-gray-400 mb-6">No comments yet.</p>
+        )}
+
+        {/* Add Comment Form */}
+        {ticket.status !== 'CLOSED' && (
+          <form onSubmit={handleAddComment} className="border-t border-gray-200 pt-4 space-y-3">
+            <textarea
+              rows={3}
+              maxLength={5000}
+              value={commentBody}
+              onChange={(e) => setCommentBody(e.target.value)}
+              placeholder="Add a comment…"
+              className="input-field resize-y"
+              required
+            />
+            <div className="flex items-center justify-between">
+              {!isCustomer && (
+                <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={isInternal}
+                    onChange={(e) => setIsInternal(e.target.checked)}
+                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  Internal note
+                </label>
+              )}
+              {isCustomer && <div />}
+              <button
+                type="submit"
+                disabled={commentLoading || !commentBody.trim()}
+                className="btn-primary text-sm"
+              >
+                {commentLoading ? 'Posting…' : (
+                  <span className="inline-flex items-center gap-1">
+                    <Send size={14} /> Post Comment
+                  </span>
+                )}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
 
       {/* Timeline */}
       <TicketTimeline events={ticket.events} />
@@ -268,7 +375,6 @@ export default function TicketDetailView() {
       {showAssignModal && (
         <AssignTicketModal
           ticketId={ticket.ticket_id}
-          currentAssignee={ticket.assignee_id}
           onAssign={handleAssign}
           onClose={() => setShowAssignModal(false)}
         />

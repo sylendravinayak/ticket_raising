@@ -4,6 +4,7 @@ import { TICKET_STATUS, STATUS_LABELS, type TicketStatus } from '@/config/consta
 const statusStyles: Record<TicketStatus, string> = {
   [TICKET_STATUS.NEW]: 'bg-blue-100 text-blue-800',
   [TICKET_STATUS.ACKNOWLEDGED]: 'bg-cyan-100 text-cyan-800',
+  [TICKET_STATUS.OPEN]: 'bg-indigo-100 text-indigo-800',
   [TICKET_STATUS.IN_PROGRESS]: 'bg-yellow-100 text-yellow-800',
   [TICKET_STATUS.ON_HOLD]: 'bg-orange-100 text-orange-800',
   [TICKET_STATUS.RESOLVED]: 'bg-green-100 text-green-800',

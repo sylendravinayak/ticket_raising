@@ -12,18 +12,15 @@ if TYPE_CHECKING:
 
 class AgentProfile(Base):
   
-
     __tablename__ = "agent_profiles"
 
     agent_profile_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    # Plain integer reference to Auth Service users table — intentionally no FK constraint.
-    user_id: Mapped[int] = mapped_column(Integer, nullable=False, unique=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True, index=True)
 
     display_name: Mapped[str] = mapped_column(String(150), nullable=False)
     is_available: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
-    # Which tier this agent primarily handles (optional — used in auto-assignment)
     customer_tier_id: Mapped[Optional[int]] = mapped_column(
         Integer,
         ForeignKey("customer_tiers.tier_id", ondelete="SET NULL"),
@@ -38,7 +35,6 @@ class AgentProfile(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
-    # Relationships (intra-service only)
     customer_tier: Mapped[Optional["CustomerTier"]] = relationship(
         "CustomerTier", back_populates="agent_profiles"
     )

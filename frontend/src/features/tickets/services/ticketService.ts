@@ -1,6 +1,7 @@
 import api from '@/lib/axios';
 import { ENV } from '@/config/env';
 import type {
+  CommentCreatePayload,
   PaginatedResponse,
   TicketAssignPayload,
   TicketBrief,
@@ -58,6 +59,11 @@ export const ticketService = {
 
   async assignTicket(ticketId: number, payload: TicketAssignPayload): Promise<TicketBrief> {
     const { data } = await api.post<TicketBrief>(`${URL}/${ticketId}/assign`, payload);
+    return data;
+  },
+
+  async addComment(ticketId: number, payload: CommentCreatePayload): Promise<TicketDetail> {
+    const { data } = await api.post<TicketDetail>(`${URL}/${ticketId}/comments`, payload);
     return data;
   },
 };

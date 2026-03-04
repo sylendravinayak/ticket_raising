@@ -26,10 +26,9 @@ class TicketComment(Base):
 
     comment_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     ticket_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False
+        Integer, ForeignKey("tickets.ticket_id", ondelete="CASCADE"), nullable=False
     )
 
-    # Cross-service user reference — plain String (UUID from Auth Service)
     author_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     author_role: Mapped[str] = mapped_column(String(50), nullable=False)
 
@@ -37,16 +36,13 @@ class TicketComment(Base):
     is_internal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_mandatory_note: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
-    # ── Status-driving flags ──────────────────────────────────────────────────
-    # True  → posting this comment triggers ON_HOLD transition (SLA pauses)
+
     triggers_hold: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    # True  → posting this comment triggers IN_PROGRESS transition (SLA resumes)
     triggers_resume: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    # Relationships (intra-service)
     ticket: Mapped["Ticket"] = relationship("Ticket", back_populates="comments")
     events: Mapped[list["TicketEvent"]] = relationship("TicketEvent", back_populates="comment")

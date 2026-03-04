@@ -19,6 +19,7 @@ export const ROLE_LABELS: Record<UserRole, string> = {
 export const TICKET_STATUS = {
   NEW: 'NEW',
   ACKNOWLEDGED: 'ACKNOWLEDGED',
+  OPEN: 'OPEN',
   IN_PROGRESS: 'IN_PROGRESS',
   ON_HOLD: 'ON_HOLD',
   RESOLVED: 'RESOLVED',
@@ -31,6 +32,7 @@ export type TicketStatus = (typeof TICKET_STATUS)[keyof typeof TICKET_STATUS];
 export const STATUS_LABELS: Record<TicketStatus, string> = {
   NEW: 'New',
   ACKNOWLEDGED: 'Acknowledged',
+  OPEN: 'Open',
   IN_PROGRESS: 'In Progress',
   ON_HOLD: 'On Hold',
   RESOLVED: 'Resolved',
@@ -40,11 +42,12 @@ export const STATUS_LABELS: Record<TicketStatus, string> = {
 
 export const ALLOWED_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
   NEW: ['ACKNOWLEDGED'],
-  ACKNOWLEDGED: ['IN_PROGRESS'],
+  ACKNOWLEDGED: ['OPEN'],
+  OPEN: ['IN_PROGRESS'],
   IN_PROGRESS: ['ON_HOLD', 'RESOLVED'],
   ON_HOLD: ['IN_PROGRESS'],
   RESOLVED: ['CLOSED'],
-  CLOSED: ['REOPENED'],
+  CLOSED: ['OPEN'],
   REOPENED: ['ACKNOWLEDGED'],
 };
 

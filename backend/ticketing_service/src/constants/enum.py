@@ -73,7 +73,16 @@ class MatchField(str, enum.Enum):
     BOTH = "BOTH"
 
 
-# ── Added: used by SlaPolicy model and seed script ─────────────────────────
+class QueueType(str, enum.Enum):
+    DIRECT = "DIRECT"   # assigned to a specific agent
+    OPEN   = "OPEN"     # unassigned, in open queue
+
+
+class RoutingStatus(str, enum.Enum):
+    SUCCESS   = "SUCCESS"     
+    AI_FAILED = "AI_FAILED" 
+
+
 class CustomerTier(str, enum.Enum):
     FREE = "FREE"
     STANDARD = "STANDARD"

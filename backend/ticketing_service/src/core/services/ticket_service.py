@@ -11,6 +11,8 @@ Resolution SLA: starts IN_PROGRESS, pauses ON_HOLD, stops RESOLVED, restarts on 
 
 import logging
 from datetime import datetime, timezone
+from src.data.models.postgres.ticket_comment import TicketComment
+from src.schemas.ticket_schema import CommentCreateRequest
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,7 +35,11 @@ from src.data.models.postgres.ticket_attachment import TicketAttachment
 from src.data.models.postgres.ticket_event import TicketEvent
 from src.data.repositories.agent_repository import AgentRepository
 from src.data.repositories.keyword_repository import KeywordRepository
+from src.data.repositories.notification_log_repository import NotificationLogRepository
 from src.data.repositories.sla_repository import SLARepository
+from src.data.repositories.sla_rule_repository import SLARuleRepository
+from src.data.repositories.ticket_attachment_repository import TicketAttachmentRepository
+from src.data.repositories.ticket_event_repository import TicketEventRepository
 from src.data.repositories.ticket_repository import TicketRepository
 from src.schemas.ticket_schema import (
     TicketAssignRequest,
@@ -41,7 +47,7 @@ from src.schemas.ticket_schema import (
     TicketListFilters,
     TicketStatusUpdateRequest,
 )
-
+from src.data.repositories.ticket_comment_repository import TicketCommentRepository
 logger = logging.getLogger(__name__)
 
 # ── Strict transition matrix ──────────────────────────────────────────────────
@@ -63,14 +69,15 @@ class TicketService:
         self.db = db
         self._auth = auth_client
         self._ticket_repo = TicketRepository(db)
+        self._event_repo = TicketEventRepository(db)
+        self._attachment_repo = TicketAttachmentRepository(db)
+        self._notification_repo = NotificationLogRepository(db)
         self._sla_repo = SLARepository(db)
+        self._sla_rule_repo = SLARuleRepository(db)
         self._keyword_repo = KeywordRepository(db)
-        self._agent_repo = AgentRepository(db)
-
+        self._comment_repo = TicketCommentRepository(db)
         self._classifier = ClassificationService(self._keyword_repo)
-        self._sla_svc = SLAService(self._sla_repo)
-
-    # ── Internal helpers ──────────────────────────────────────────────────────
+        self._sla_svc = SLAService(self._sla_repo, self._sla_rule_repo)
 
     async def _get_or_404(self, ticket_id: int) -> Ticket:
         ticket = await self._ticket_repo.get_by_id(ticket_id)
@@ -83,7 +90,7 @@ class TicketService:
     ticket: Ticket,
     from_status: TicketStatus | None,
     to_status: TicketStatus,
-    changed_by: str,                # UUID string or "SYSTEM"
+    changed_by: str,              
     reason: str | None = None,
 ) -> None:
         """
@@ -91,9 +98,8 @@ class TicketService:
         This IS the timeline — filter ticket_events by event_type=STATUS_CHANGED
         to reconstruct the full transition history.
         """
-        await self._ticket_repo.add_event(TicketEvent(
+        await self._event_repo.add(TicketEvent(
             ticket_id=ticket.ticket_id,
-            # triggered_by_user_id is None for SYSTEM events
             triggered_by_user_id=changed_by if changed_by != "SYSTEM" else None,
             event_type=EventType.STATUS_CHANGED,
             field_name="status",
@@ -103,7 +109,6 @@ class TicketService:
             reason=reason,
         ))
 
-    # ── CREATE ────────────────────────────────────────────────────────────────
 
     async def create_ticket(
         self,
@@ -160,20 +165,17 @@ class TicketService:
             auto_closed=False,
         )
 
-        # Start response SLA immediately
         self._sla_svc.start_response_sla(ticket, now)
 
         ticket = await self._ticket_repo.create(ticket)
 
-        # 6. Timeline: creation (from_status=None → NEW)
         await self._record_transition(
             ticket, from_status=None, to_status=TicketStatus.NEW,
             changed_by=current_user_id, reason="Ticket created",
         )
 
-        # 7. Attachment stubs
         for url in payload.attachments:
-            await self._ticket_repo.add_attachment(TicketAttachment(
+            await self._attachment_repo.add(TicketAttachment(
                 ticket_id=ticket.ticket_id,
                 file_name=url.split("/")[-1],
                 file_url=url,
@@ -191,8 +193,7 @@ class TicketService:
             reason="Automatic acknowledgement on creation",
         )
 
-        # 9. Acknowledgement notification to customer
-        await self._ticket_repo.add_notification_log(NotificationLog(
+        await self._notification_repo.add(NotificationLog(
             ticket_id=ticket.ticket_id,
             recipient_user_id=current_user_id,
             channel=NotificationChannel.EMAIL,
@@ -215,7 +216,6 @@ class TicketService:
         )
         return ticket
 
-    # ── STATUS TRANSITION ─────────────────────────────────────────────────────
 
     async def transition_status(
         self,
@@ -229,11 +229,9 @@ class TicketService:
         old_status = ticket.status
         new_status = payload.new_status
 
-        # Role guard — customers cannot change status
         if UserRole(current_user_role) == UserRole.CUSTOMER:
             raise InsufficientPermissionsError("Customers cannot update ticket status.")
 
-        # Transition matrix guard
         allowed = ALLOWED_TRANSITIONS.get(old_status, [])
         if new_status not in allowed:
             raise InvalidStatusTransitionError(
@@ -241,16 +239,12 @@ class TicketService:
                 f"Allowed: {[s.value for s in allowed]}"
             )
 
-        # ── SLA side-effects per transition ───────────────────────────────────
 
         if new_status == TicketStatus.IN_PROGRESS:
             if old_status == TicketStatus.ON_HOLD:
-                # Resume resolution SLA — accumulate pause duration
                 self._sla_svc.resume_resolution_sla(ticket, now)
             else:
-                # First time entering IN_PROGRESS — start resolution SLA
                 self._sla_svc.start_resolution_sla(ticket, now)
-            # Response SLA always completes when hitting IN_PROGRESS
             self._sla_svc.complete_response_sla(ticket, now)
 
         elif new_status == TicketStatus.ON_HOLD:
@@ -260,25 +254,22 @@ class TicketService:
             self._sla_svc.complete_resolution_sla(ticket, now)
 
         elif new_status == TicketStatus.OPEN and old_status == TicketStatus.CLOSED:
-            # Reopen — restart resolution SLA, keep response SLA and escalation_level
             self._sla_svc.restart_resolution_sla(ticket, now)
 
-        # Apply status
+        
         ticket.status = new_status
         ticket = await self._ticket_repo.save(ticket)
 
-        # Timeline + event
         await self._record_transition(
             ticket, from_status=old_status, to_status=new_status,
             changed_by=current_user_id, reason=payload.comment,
         )
 
-        # Notify customer on meaningful transitions
         if new_status in (
             TicketStatus.IN_PROGRESS, TicketStatus.RESOLVED,
             TicketStatus.CLOSED, TicketStatus.OPEN,
         ):
-            await self._ticket_repo.add_notification_log(NotificationLog(
+            await self._notification_repo.add(NotificationLog(
                 ticket_id=ticket.ticket_id,
                 recipient_user_id=ticket.customer_id,
                 channel=NotificationChannel.EMAIL,
@@ -292,7 +283,6 @@ class TicketService:
         )
         return ticket
 
-    # ── ASSIGN ────────────────────────────────────────────────────────────────
 
     async def assign_ticket(
         self,
@@ -311,7 +301,7 @@ class TicketService:
         ticket.assignee_id = payload.assignee_id
         ticket = await self._ticket_repo.save(ticket)
 
-        await self._ticket_repo.add_event(TicketEvent(
+        await self._event_repo.add(TicketEvent(
             ticket_id=ticket.ticket_id,
             triggered_by_user_id=current_user_id,
             event_type=EventType.ASSIGNED,
@@ -319,8 +309,18 @@ class TicketService:
             old_value=str(old_assignee) if old_assignee else None,
             new_value=payload.assignee_id,
         ))
+        await self.transition_status(
+            ticket_id=ticket_id,
+            payload=TicketStatusUpdateRequest(
+                new_status=TicketStatus.OPEN,
+                comment="Ticket assigned to agent",
+            ),
+            current_user_id=current_user_id,
+            current_user_role=current_user_role
+        )
+            
         for channel in (NotificationChannel.EMAIL, NotificationChannel.IN_APP):
-            await self._ticket_repo.add_notification_log(NotificationLog(
+            await self._notification_repo.add(NotificationLog(
                 ticket_id=ticket.ticket_id,
                 recipient_user_id=payload.assignee_id,
                 channel=channel,
@@ -331,7 +331,6 @@ class TicketService:
         logger.info("assigned: id=%s → %s by %s", ticket_id, payload.assignee_id, current_user_id)
         return ticket
 
-    # ── READ ──────────────────────────────────────────────────────────────────
 
     async def get_my_tickets(
         self,
@@ -369,4 +368,22 @@ class TicketService:
             raise InsufficientPermissionsError("Only team leads and admins can view all tickets.")
         return await self._ticket_repo.list_all(filters)
 
+    async def add_comment(
+        self,
+        comment: CommentCreateRequest,
+        current_user_id: str,
+        current_user_role: str
+        
+    ):
+        return await self._comment_repo.add(
+            TicketComment(
+            ticket_id=comment.ticket_id,
+            author_id=current_user_id,
+            author_role=current_user_role,
+            body=comment.body,
+            is_internal=comment.is_internal,
+            triggers_hold=comment.triggers_hold,
+            triggers_resume=comment.triggers_resume
+        )
+        )
     

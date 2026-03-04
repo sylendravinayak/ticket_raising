@@ -33,6 +33,7 @@ from src.schemas.ticket_schema import (
     TicketStatusUpdateRequest,
 )
 
+from src.data.models.postgres.ticket_comment import TicketComment
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 
@@ -179,10 +180,8 @@ async def update_ticket_status(
     return TicketBriefResponse.model_validate(ticket)
 
 
-# ── ADD COMMENT ───────────────────────────────────────────────────────────────
 @router.post( 
     "/{ticket_id}/comments",
-    response_model=TicketDetailResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Add a comment to a ticket",
     description=(
@@ -194,22 +193,19 @@ async def update_ticket_status(
     ),
 )
 async def add_comment(
-    ticket_id: int,
-    payload: CommentCreateRequest,
     svc: TicketServiceDep,
+    payload: CommentCreateRequest,
     user_id: CurrentUserID,
     user_role: CurrentUserRole,
 ):
     ticket = await svc.add_comment(
-        ticket_id=ticket_id,
-        payload=payload,
+        payload,
         current_user_id=user_id,
         current_user_role=user_role,
     )
-    return TicketDetailResponse.model_validate(ticket)
+    return ticket
 
 
-# ── ASSIGN ────────────────────────────────────────────────────────────────────
 @router.post(
     "/{ticket_id}/assign",
     response_model=TicketBriefResponse,

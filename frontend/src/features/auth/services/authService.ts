@@ -35,8 +35,8 @@ export const authService = {
     return data;
   },
 
-  async getAgentByLeadId(leadId: string): Promise<User> {
-    const { data } = await api.get<User>(`${AUTH_URL}/agent-by-lead/${leadId}`);
+  async getAgentsByLeadId(leadId: string): Promise<User[]> {
+    const { data } = await api.get<User[]>(`${AUTH_URL}/leads/${leadId}/agents`);
     return data;
-  }
+  },
 };

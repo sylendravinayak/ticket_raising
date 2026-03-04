@@ -1,4 +1,9 @@
-"""AgentProfile repository — used for lead lookup during escalation."""
+"""
+AgentProfile repository — manages the ``agent_profiles`` table ONLY.
+
+This repository must NOT query or mutate any other table.
+Cross-table orchestration belongs in the service layer.
+"""
 
 from typing import Optional
 
@@ -7,13 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.constants.enum import UserRole
 from src.data.models.postgres.agent_profile import AgentProfile
+from src.schemas.agent_schema import AgentProfileSyncRequest
 
 
 class AgentRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
-    async def get_by_user_id(self, user_id: int) -> Optional[AgentProfile]:
+    async def get_by_user_id(self, user_id: str) -> Optional[AgentProfile]:
         result = await self.db.execute(
             select(AgentProfile).where(AgentProfile.user_id == user_id)
         )
@@ -24,7 +30,7 @@ class AgentRepository:
         Returns all AgentProfiles that are currently available for assignment.
         """
         result = await self.db.execute(
-            select(AgentProfile).where(AgentProfile.is_available == True)  # noqa: E712
+            select(AgentProfile).where(AgentProfile.is_available == True)  
         )
         return list(result.scalars().all())
 
@@ -38,3 +44,73 @@ class AgentRepository:
             select(AgentProfile).where(AgentProfile.is_available == True)
         )
         return list(result.scalars().all())
+
+    async def get_lead_agent(self) -> Optional[AgentProfile]:
+        """
+        Return the first available team-lead profile.
+        Convention: the lead has display_name containing 'Lead' or is
+        explicitly flagged.  For now we pick the agent with the lowest
+        user_id among available agents whose display_name contains 'Lead'.
+        Falls back to any available agent if no lead found.
+        """
+        result = await self.db.execute(
+            select(AgentProfile)
+            .where(
+                AgentProfile.is_available == True,  
+                AgentProfile.display_name.ilike("%lead%"),
+            )
+            .order_by(AgentProfile.user_id)
+            .limit(1)
+        )
+        lead = result.scalar_one_or_none()
+        if lead:
+            return lead
+
+        result = await self.db.execute(
+            select(AgentProfile)
+            .where(AgentProfile.is_available == True) 
+            .order_by(AgentProfile.user_id)
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def sync_agent_profile(self, payload: AgentProfileSyncRequest) -> AgentProfile:
+        """
+        Create or update an agent profile from Auth Service sync.
+        Used when agents are created/updated in the Auth Service.
+        """
+        existing = await self.get_by_user_id(payload.user_id)
+        
+        if existing:
+            # Update existing profile
+            existing.display_name = payload.display_name
+            existing.is_available = payload.is_available
+            existing.customer_tier_id = payload.customer_tier_id
+            existing.max_open_tickets = payload.max_open_tickets
+            self.db.add(existing)
+            await self.db.flush()
+            return existing
+        
+        # Create new profile
+        new_profile = AgentProfile(
+            user_id=payload.user_id,
+            display_name=payload.display_name,
+            is_available=payload.is_available,
+            customer_tier_id=payload.customer_tier_id,
+            max_open_tickets=payload.max_open_tickets,
+        )
+        self.db.add(new_profile)
+        await self.db.flush()
+        return new_profile
+
+    async def update_availability(self, user_id: str, is_available: bool) -> Optional[AgentProfile]:
+        """
+        Update an agent's availability status.
+        Used when agents go online/offline.
+        """
+        profile = await self.get_by_user_id(user_id)
+        if profile:
+            profile.is_available = is_available
+            self.db.add(profile)
+            await self.db.flush()
+        return profile

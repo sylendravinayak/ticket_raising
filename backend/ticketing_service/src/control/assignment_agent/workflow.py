@@ -1,7 +1,6 @@
 import json
 import logging
 from typing import Any
-from langchain_core.messages import HumanMessage
 from src.config.settings import get_settings
 from src.control.assignment_agent.agent import get_assignment_agent
 
@@ -47,9 +46,10 @@ async def run_auto_assign(
         f"4. Call `assign_ticket_to_agent` with the ticket and chosen agent details:\n"
         f"   assigner_id={assigner_id}, assigner_role={assigner_role}\n"
         f"5. Report the final assignment result clearly, including why the agent was chosen."
+        f"6.If any error print the error details."
     )
 
-    result = await agent.ainvoke({"messages": [HumanMessage(content=prompt)]})
+    result = await agent.ainvoke({"messages": [{"content": prompt, "role": "user"}]})
 
     last_message = result["messages"][-1]
     logger.info("Assignment agent result for ticket %s: %s", ticket_id, last_message.content)

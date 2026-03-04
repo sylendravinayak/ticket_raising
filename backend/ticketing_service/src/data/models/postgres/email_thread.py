@@ -25,5 +25,4 @@ class EmailThread(Base):
     sender_email: Mapped[str] = mapped_column(String(255), nullable=False)
     received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
-    # Relationships
     ticket: Mapped["Ticket"] = relationship("Ticket", back_populates="email_threads")

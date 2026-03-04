@@ -27,7 +27,7 @@ class UserDTO(BaseModel):
     is_active: bool = True
     is_verified: bool = False
     customer_tier_id: Optional[int] = None   
-
+    
 
 class AuthServiceClient:
     """Thin async wrapper around Auth Service REST API."""
@@ -87,7 +87,4 @@ class AuthServiceClient:
         await asyncio.gather(*[_fetch(uid) for uid in set(user_ids)])
         return results
         
-    
-        
-
 auth_client = AuthServiceClient()

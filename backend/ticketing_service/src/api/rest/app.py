@@ -10,6 +10,10 @@ from fastapi.openapi.utils import get_openapi
 from src.api.middleware.error_handler import register_exception_handlers
 from src.api.rest.routes.health import router as health_router
 from src.api.rest.routes.tickets import router as ticket_router
+from src.api.rest.routes.agents import router as agent_router
+from src.api.rest.routes.keyword_rules import router as keyword_rules_router
+from src.api.rest.routes.sla_rules import router as sla_rules_router
+from src.api.rest.routes.analytics import router as analytics_router
 from src.data.clients.postgres_client import engine
 from src.data.models.postgres import Base  
 from src.observability.logging.logger import setup_logging
@@ -38,29 +42,12 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     setup_cors(app)
-
     app.add_middleware(JWTMiddleware)
-
     register_exception_handlers(app)
-
     app.include_router(health_router)
     app.include_router(ticket_router)
-    def custom_openapi() -> dict:
-        if app.openapi_schema:
-            return app.openapi_schema
-        schema = get_openapi(
-            title=app.title, version=app.version,
-            description=app.description, routes=app.routes,
-        )
-        schema.setdefault("components", {})["securitySchemes"] = {
-            "BearerAuth": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}
-        }
-        for path_data in schema.get("paths", {}).values():
-            for operation in path_data.values():
-                if isinstance(operation, dict):
-                    operation.setdefault("security", [{"BearerAuth": []}])
-        app.openapi_schema = schema
-        return schema
-
-    app.openapi = custom_openapi  
+    app.include_router(agent_router)
+    app.include_router(keyword_rules_router)
+    app.include_router(sla_rules_router)
+    app.include_router(analytics_router)
     return app

@@ -1,11 +1,9 @@
 import { useAppSelector } from '@/hooks/useAppDispatch';
 import { USER_ROLES, ROLE_LABELS } from '@/config/constants';
 import {
-  LayoutDashboard,
   Ticket,
   Shield,
   Users,
-  UserCheck,
   AlertTriangle,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -84,14 +82,15 @@ export default function DashboardPage() {
         {isAgent && (
           <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
             <li>View tickets assigned to you</li>
-            <li>Self-assign unassigned tickets</li>
+            <li>Self-assign tickets from the open queue</li>
             <li>Transition ticket status (acknowledge, resolve, etc.)</li>
+            <li>Add comments to tickets</li>
           </ul>
         )}
         {isLeadOrAdmin && (
           <ul className="text-sm text-gray-600 space-y-1 list-disc list-inside">
             <li>View and manage all tickets in the system</li>
-            <li>Assign tickets to any agent</li>
+            <li>Assign tickets to agents on your team</li>
             <li>Transition ticket status</li>
             <li>Filter by SLA breach, escalation, and more</li>
           </ul>

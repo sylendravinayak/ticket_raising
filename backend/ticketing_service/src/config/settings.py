@@ -19,10 +19,9 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str
 
-    # JWT — used to decode tokens issued by Auth Service
     secret_key: str = Field(default="change-me-at-least-32-chars-long-here")
     algorithm: str = Field(default="HS256")
-    # Auth Service URL — for cross-service user lookups
+
     auth_service_url: str = Field(default="http://localhost:8001")
     
     # SendGrid
@@ -32,23 +31,17 @@ class Settings(BaseSettings):
     # Celery
     CELERY_BROKER_URL: str = Field(default="redis://localhost:6379/0")
     CELERY_RESULT_BACKEND: str = Field(default="redis://localhost:6379/1")
-    # SLA defaults (minutes)
     DEFAULT_RESPONSE_TIME_MINUTES: int = 480       # 8 h
     DEFAULT_RESOLUTION_TIME_MINUTES: int = 2880    # 48 h
-    DEFAULT_ESCALATION_AFTER_MINUTES: int = 120    # 2 
-
-    # Auto-close resolved tickets after N hours
-    auto_close_after_hours: int = Field(default=72)
-
-    # Optional: Anthropic LLM for classification
-    anthropic_api_key: str = Field(default="")
+    DEFAULT_ESCALATION_AFTER_MINUTES: int = 120    # 2 h
+    LEAD_TIMEOUT_MINUTES: int = Field(default=15)
 
     CELERY_BROKER_URL: str = Field(default="redis://localhost:6379/0")
-    CELERY_RESULT_BACKEND: str = Field(default="redis://localhost:6379/0")
+    CELERY_RESULT_BACKEND: str = Field(default="redis://localhost:6379/1")
+    groq_api_key: str = Field(default="")
 
-    # LLM keys
-    anthropic_api_key: str = Field(default="")
-    groq_api_key: str = Field(default="")   
+    AUTO_CLOSE_AFTER_HOURS:int = Field(default=72*60)
+
 
 
 @lru_cache

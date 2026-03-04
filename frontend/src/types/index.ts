@@ -54,6 +54,9 @@ export interface TicketBrief {
   source: string;
   customer_id: string;
   assignee_id: string | null;
+  assigned_agent_id: number | null;
+  queue_type: string;
+  routing_status: string;
   sla_id: number | null;
   customer_tier_id: number | null;
   response_due_at: string | null;
@@ -83,6 +86,8 @@ export interface TicketComment {
   author_role: string;
   body: string;
   is_internal: boolean;
+  triggers_hold: boolean;
+  triggers_resume: boolean;
   attachments: unknown[] | null;
   created_at: string;
 }
@@ -124,6 +129,13 @@ export interface TicketStatusUpdatePayload {
 
 export interface TicketAssignPayload {
   assignee_id: string;
+}
+
+export interface CommentCreatePayload {
+  body: string;
+  is_internal?: boolean;
+  triggers_hold?: boolean;
+  triggers_resume?: boolean;
 }
 
 export interface PaginatedResponse<T> {

@@ -1,4 +1,9 @@
-"""Repository for ticket_events — audit trail and timeline."""
+"""
+TicketEvent repository — manages the ``ticket_events`` table ONLY.
+
+This repository must NOT query or mutate any other table.
+Cross-table orchestration belongs in the service layer.
+"""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +15,11 @@ from src.data.models.postgres.ticket_event import TicketEvent
 class TicketEventRepository:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+
+    async def add(self, event: TicketEvent) -> None:
+        """Insert a new event row and flush to obtain its ID."""
+        self.db.add(event)
+        await self.db.flush()
 
     async def get_for_ticket(self, ticket_id: int) -> list[TicketEvent]:
         """All events for a ticket, oldest first."""

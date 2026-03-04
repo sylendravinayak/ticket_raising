@@ -8,7 +8,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.constants.enum import (
-    Environment, Priority, Severity, TicketSource, TicketStatus,
+    Environment, Priority, QueueType, RoutingStatus,
+    Severity, TicketSource, TicketStatus,
 )
 from src.data.models.postgres.base import Base
 
@@ -57,11 +58,19 @@ class Ticket(Base):
 
     # ── Routing fields ────────────────────────────────────────────────────────
     # assigned_agent_id: NULL = ticket is in OPEN queue (unassigned)
-    assigned_agent_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    assigned_agent_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     # queue_type: DIRECT (assigned) or OPEN (unassigned / waiting)
-    queue_type: Mapped[str] = mapped_column(String(50), nullable=False, default="DIRECT")
+    queue_type: Mapped[str] = mapped_column(
+        String(50), nullable=False, default=QueueType.DIRECT.value,
+    )
     # routing_status: SUCCESS (AI assigned) or AI_FAILED (AI could not assign)
-    routing_status: Mapped[str] = mapped_column(String(50), nullable=False, default="SUCCESS")
+    routing_status: Mapped[str] = mapped_column(
+        String(50), nullable=False, default=RoutingStatus.SUCCESS.value,
+    )
+    # When ticket was assigned to lead (after AI failure) — used for timeout
+    lead_assigned_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True,
+    )
     # ─────────────────────────────────────────────────────────────────────────
 
     customer_tier_id: Mapped[Optional[int]] = mapped_column(

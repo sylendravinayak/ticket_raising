@@ -1,0 +1,45 @@
+services:
+
+  auth_service:
+    build: ./backend/auth_service
+    container_name: auth_service
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://postgres:raja807@localhost:5432/ticketing-genie
+    depends_on:
+      - db
+
+  ticketing_service:
+    build: ./backend/ticketing_service
+    container_name: ticketing_service
+    ports:
+      - "8000:8000"
+    environment:
+      - AUTH_SERVICE_URL=http://auth_service:8001
+      - DATABASE_URL=postgresql+asyncpg://postgres:raja807@localhost:5432/ticketing-genie
+    depends_on:
+      - auth_service
+      - db
+
+  front_end:
+    build: ./frontend
+    container_name: frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - ticketing_service
+
+  db:
+    image: postgres:15
+    container_name: postgres_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: raja807
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

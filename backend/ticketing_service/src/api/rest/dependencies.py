@@ -12,6 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.data.clients.auth_client import auth_client
 from src.core.exceptions.base import InvalidTokenError
 from src.data.clients.postgres_client import get_db
+from src.core.services.analytics_service import AnalyticsService
+from src.core.services.keyword_rule_service import KeywordRuleService
+from src.core.services.sla_rule_service import SLARuleManagementService
 from src.core.services.ticket_service import TicketService
 
 
@@ -44,3 +47,27 @@ def get_ticket_service(db: DBSession) -> TicketService:
 
 
 TicketServiceDep = Annotated[TicketService, Depends(get_ticket_service)]
+
+
+# ── KeywordRuleService factory ──────────────────────────────────────────────
+def get_keyword_rule_service(db: DBSession) -> KeywordRuleService:
+    return KeywordRuleService(db=db)
+
+
+KeywordRuleServiceDep = Annotated[KeywordRuleService, Depends(get_keyword_rule_service)]
+
+
+# ── SLARuleManagementService factory ────────────────────────────────────────
+def get_sla_rule_management_service(db: DBSession) -> SLARuleManagementService:
+    return SLARuleManagementService(db=db)
+
+
+SLARuleManagementServiceDep = Annotated[SLARuleManagementService, Depends(get_sla_rule_management_service)]
+
+
+# ── AnalyticsService factory ────────────────────────────────────────────────
+def get_analytics_service(db: DBSession) -> AnalyticsService:
+    return AnalyticsService(db=db)
+
+
+AnalyticsServiceDep = Annotated[AnalyticsService, Depends(get_analytics_service)]

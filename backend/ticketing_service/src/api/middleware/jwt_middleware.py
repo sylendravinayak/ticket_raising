@@ -1,6 +1,6 @@
 """
 JWT Middleware — decodes the Bearer token and injects:
-    request.state.user_id   (int)
+    request.state.user_id   (str — UUID from Auth Service)
     request.state.user_role (str)
 
 Public paths bypass auth entirely.
@@ -38,6 +38,8 @@ class JWTMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
 
+        if request.method == "OPTIONS":
+            return await call_next(request)
         # Skip auth for public paths
         if _is_public(request.url.path):
             return await call_next(request)
@@ -71,7 +73,6 @@ class JWTMiddleware(BaseHTTPMiddleware):
                 algorithms=[settings.algorithm],
             )
         except ExpiredSignatureError:
-            # ── FIX: was jwt.ExpiredSignatureError (doesn't exist on jose.jwt)
             return JSONResponse(
                 status_code=401,
                 content={
@@ -80,7 +81,6 @@ class JWTMiddleware(BaseHTTPMiddleware):
                 },
             )
         except JWTError as exc:
-            # ── FIX: was jwt.InvalidTokenError (doesn't exist on jose.jwt)
             logger.warning("jwt_middleware: invalid token — %s", exc)
             return JSONResponse(
                 status_code=401,
@@ -103,8 +103,7 @@ class JWTMiddleware(BaseHTTPMiddleware):
                 },
             )
 
-        # Inject into request state — read by dependencies.py
-        request.state.user_id = user_id          # UUID string from auth service
+        request.state.user_id = user_id         
         request.state.user_role = str(user_role)
 
         logger.debug(
